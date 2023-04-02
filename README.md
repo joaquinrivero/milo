@@ -1,5 +1,5 @@
-# Milo project
-Your project's description...
+# Adobe Milo project
+A Chaotic Good Creative Platform
 
 ## Environments
 - Preview: https://main--{repo}--{owner}.hlx.page/
