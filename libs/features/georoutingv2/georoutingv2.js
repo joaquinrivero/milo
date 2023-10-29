@@ -242,7 +242,7 @@ async function getDetails(currentPage, localeMatches, geoData) {
     const urlParams = new URLSearchParams(window.location.search);
     const geoImage = urlParams.get('geoimage');
 
-    let path = `${config.miloLibs || config.codeRoot}/features/georoutingv2/img`;
+    let path = `${config.miloLibs || config.codeRoot}/img/georouting`;
     let params = 'format=webply&optimize=medium';
 
     const background = createTag('div', { class: 'background' });
@@ -252,13 +252,18 @@ async function getDetails(currentPage, localeMatches, geoData) {
     const picture = createTag('picture');
 
     const sourceDesktop = createTag('source');
-    sourceDesktop.srcset = `${path}/GeoModal_BG_Map_Desktop.png?${params} 1024w`;
+    sourceDesktop.srcset = `${path}/background_desktop.png?${params} 1024w`;
     sourceDesktop.media = '(min-width: 1200px)';
     sourceDesktop.type = 'image/png';
 
+    const sourceTablet = createTag('source');
+    sourceDesktop.srcset = `${path}/background_tablet.png?${params} 600w`;
+    sourceDesktop.media = '(min-width: 480px)';
+    sourceDesktop.type = 'image/png';
+
     const sourceMobile = createTag('source');
-    sourceMobile.srcset = `${path}/GeoModal_BG_Map_Tablet.png?${params} 480w`;
-    sourceMobile.media = '(min-width: 480px)';
+    sourceMobile.srcset = `${path}/background_mobile.png?${params} 480w`;
+    sourceMobile.media = '(max-width: 479px)';
     sourceMobile.type = 'image/png';
 
     const img = createTag('img',{
