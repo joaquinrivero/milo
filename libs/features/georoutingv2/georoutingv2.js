@@ -250,7 +250,7 @@ async function getDetails(currentPage, localeMatches, geoData) {
     });
 
     
-    const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment marquee' });
+    const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment marquee light' });
     geoPicture.appendChild(geoImage);    
     geoBg.appendChild(geoPicture);
     georoutingWrapper.appendChild(geoBg);

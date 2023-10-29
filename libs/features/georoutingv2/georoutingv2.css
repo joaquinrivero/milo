@@ -1,3 +1,14 @@
+.dialog-modal .marquee {
+  min-height: unset;
+}
+.dialog-modal .marquee .foreground {
+  gap: unset;
+  flex-direction: column;
+  justify-content: center;
+  align-items: unset;
+  padding: unset;
+}
+
 .dialog-modal.locale-modal-v2 .georouting-wrapper {
   padding: 56px 24px 40px;
 }
