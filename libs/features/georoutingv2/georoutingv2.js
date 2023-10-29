@@ -240,22 +240,37 @@ async function getDetails(currentPage, localeMatches, geoData) {
   const availableLocales = await getAvailableLocales(localeMatches);
   if (availableLocales.length > 0) {
 
-    const geoBg = createTag('div', { class: 'georouting' });
+    let path = `${config.miloLibs || config.codeRoot}/features/georoutingv2/img`;
+    let params = 'format=webply&optimize=medium';
+
+    const background = createTag('div', { class: 'background' });
     const foreground = createTag('div', { class: 'foreground' });
-    const geoPicture = createTag('picture');
-    const geoImage = createTag('img', {
-      loading: 'lazy',
-      alt: '',
-      src: `${config.miloLibs || config.codeRoot}/features/georoutingv2/img/GeoModal_BG_Map_Tablet.png?format=webply&optimize=medium`
+    const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment marquee light' });
+
+    const picture = createTag('picture');
+
+    const sourceDesktop = createTag('source');
+    sourceDesktop.srcset = `${path}/GeoModal_BG_Map_Desktop.png?${params} 1024w`;
+    sourceDesktop.media = '(min-width: 1200px)';
+    sourceDesktop.type = 'image/png';
+
+    const sourceMobile = createTag('source');
+    sourceMobile.srcset = `${path}/GeoModal_BG_Map_Tablet.png?${params} 480w`;
+    sourceMobile.media = '(min-width: 480px)';
+    sourceMobile.type = 'image/png';
+
+    const img = createTag('img',{
+      src: `${path}/GeoModal_BG_Map_Tablet.png?${params}`,
+      alt: 'Alternative text'
     });
 
-    
-    const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment marquee light' });
-    geoPicture.appendChild(geoImage);    
-    geoBg.appendChild(geoPicture);
-    georoutingWrapper.appendChild(geoBg);
+    picture.appendChild(sourceDesktop);
+    picture.appendChild(sourceMobile);
+    picture.appendChild(img);
+    georoutingWrapper.appendChild(background);
     georoutingWrapper.appendChild(foreground);
-    decorateBlockBg(georoutingWrapper,geoBg );
+    background.appendChild(picture);
+    decorateBlockBg(georoutingWrapper,background);
     
     currentPage.url = window.location.hash ? document.location.href : '#';
 
