@@ -1,3 +1,4 @@
+import { decorateBlockBg } from '../../utils/decorate.js';
 let config;
 let createTag;
 let getMetadata;
@@ -99,6 +100,7 @@ async function getAvailableLocales(locales) {
 }
 
 function getGeoroutingOverride() {
+  
   const urlParams = new URLSearchParams(window.location.search);
   const param = urlParams.get('georouting');
   const georouting = param || getCookie('georouting');
@@ -237,26 +239,45 @@ function buildContent(currentPage, locale, geoData, locales) {
 async function getDetails(currentPage, localeMatches, geoData) {
   const availableLocales = await getAvailableLocales(localeMatches);
   if (availableLocales.length > 0) {
-    const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment' });
+
+    const geoBg = createTag('div', { class: 'georouting' });
+    const foreground = createTag('div', { class: 'foreground' });
+    const geoPicture = createTag('picture');
+    const geoImage = createTag('img', {
+      loading: 'lazy',
+      alt: '',
+      src: `${config.miloLibs || config.codeRoot}/features/georoutingv2/img/GeoModal_BG_Map_Tablet.png?format=webply&optimize=medium`
+    });
+
+    
+    const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment marquee' });
+    geoPicture.appendChild(geoImage);    
+    geoBg.appendChild(geoPicture);
+    georoutingWrapper.appendChild(geoBg);
+    georoutingWrapper.appendChild(foreground);
+    decorateBlockBg(georoutingWrapper,geoBg );
+    
     currentPage.url = window.location.hash ? document.location.href : '#';
+
     if (availableLocales.length === 1) {
       const content = buildContent(currentPage, availableLocales[0], geoData);
-      georoutingWrapper.appendChild(content);
+      foreground.appendChild(content);
       return georoutingWrapper;
     }
     const sortedLocales = availableLocales.sort((a, b) => a.languageOrder - b.languageOrder);
     const tabsContainer = createTabsContainer(sortedLocales.map((l) => l.language));
-    georoutingWrapper.appendChild(tabsContainer);
+    foreground.appendChild(tabsContainer);
 
     sortedLocales.forEach((locale) => {
       const content = buildContent(currentPage, locale, geoData, sortedLocales);
       const tab = createTab(content, locale.language);
-      georoutingWrapper.appendChild(tab);
+      foreground.appendChild(tab);
     });
     return georoutingWrapper;
   }
   return null;
 }
+
 
 async function showModal(details) {
   const { miloLibs, codeRoot } = config;
