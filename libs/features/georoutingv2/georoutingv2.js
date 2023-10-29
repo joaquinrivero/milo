@@ -239,6 +239,8 @@ function buildContent(currentPage, locale, geoData, locales) {
 async function getDetails(currentPage, localeMatches, geoData) {
   const availableLocales = await getAvailableLocales(localeMatches);
   if (availableLocales.length > 0) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const geoImage = urlParams.get('geoimage');
 
     let path = `${config.miloLibs || config.codeRoot}/features/georoutingv2/img`;
     let params = 'format=webply&optimize=medium';
@@ -269,7 +271,9 @@ async function getDetails(currentPage, localeMatches, geoData) {
     picture.appendChild(img);
     georoutingWrapper.appendChild(background);
     georoutingWrapper.appendChild(foreground);
-    background.appendChild(picture);
+    if(geoImage !== 'off'){
+      background.appendChild(picture);
+    }
     decorateBlockBg(georoutingWrapper,background);
     
     currentPage.url = window.location.hash ? document.location.href : '#';
