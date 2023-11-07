@@ -60,13 +60,11 @@ const getAkamaiCode = () => new Promise((resolve) => {
   const akamaiLocale = urlParams.get('akamaiLocale') || sessionStorage.getItem('akamai');
   if (akamaiLocale !== null) {
     resolve(akamaiLocale.toLowerCase());
-    console.log('akamaiLocale', akamaiLocale);
   } else {
     /* c8 ignore next 5 */
     geo2jsonp((data) => {
       const code = data.country.toLowerCase();
       sessionStorage.setItem('akamai', code);
-      console.log('akamaiLocale', akamaiLocale);
       resolve(code);
     });
   }
@@ -246,8 +244,6 @@ async function getDetails(currentPage, localeMatches, geoData) {
     const geoImage = urlParams.get('geoimage');
     const path = `${config.miloLibs || config.codeRoot}/img/georouting`;
     const params = 'format=webply&optimize=medium';
-    loadLink(`${path}/background-mobile.png?${params}`, 'image/png', 'preload', 'image', 'background-mobile');
-
     const background = createTag('div', { class: 'background' });
     const foreground = createTag('div', { class: 'foreground' });
     const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment marquee light' });
