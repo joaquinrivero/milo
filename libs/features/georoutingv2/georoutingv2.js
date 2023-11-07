@@ -1,3 +1,5 @@
+import { loadLink } from '../../utils/utils.js';
+import { decorateBlockBg } from '../../utils/decorate.js';
 let config;
 let createTag;
 let getMetadata;
@@ -58,11 +60,13 @@ const getAkamaiCode = () => new Promise((resolve) => {
   const akamaiLocale = urlParams.get('akamaiLocale') || sessionStorage.getItem('akamai');
   if (akamaiLocale !== null) {
     resolve(akamaiLocale.toLowerCase());
+    console.log('akamaiLocale', akamaiLocale);
   } else {
     /* c8 ignore next 5 */
     geo2jsonp((data) => {
       const code = data.country.toLowerCase();
       sessionStorage.setItem('akamai', code);
+      console.log('akamaiLocale', akamaiLocale);
       resolve(code);
     });
   }
@@ -99,6 +103,7 @@ async function getAvailableLocales(locales) {
 }
 
 function getGeoroutingOverride() {
+  
   const urlParams = new URLSearchParams(window.location.search);
   const param = urlParams.get('georouting');
   const georouting = param || getCookie('georouting');
@@ -237,26 +242,72 @@ function buildContent(currentPage, locale, geoData, locales) {
 async function getDetails(currentPage, localeMatches, geoData) {
   const availableLocales = await getAvailableLocales(localeMatches);
   if (availableLocales.length > 0) {
-    const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment' });
+    const urlParams = new URLSearchParams(window.location.search);
+    const geoImage = urlParams.get('geoimage');
+    const path = `${config.miloLibs || config.codeRoot}/img/georouting`;
+    const params = 'format=webply&optimize=medium';
+    loadLink(`${path}/background-mobile.png?${params}`, 'image/png', 'preload', 'image', 'background-mobile');
+
+    const background = createTag('div', { class: 'background' });
+    const foreground = createTag('div', { class: 'foreground' });
+    const georoutingWrapper = createTag('div', { class: 'georouting-wrapper fragment marquee light' });
+
+    const picture = createTag('picture');
+    
+
+    const sourceDesktop = createTag('source');
+    sourceDesktop.srcset = `${path}/background-desktop.png?${params} 1024w`;
+    sourceDesktop.media = '(min-width: 1200px)';
+    sourceDesktop.type = 'image/png';
+
+    const sourceTablet = createTag('source');
+    sourceDesktop.srcset = `${path}/background-tablet.png?${params} 600w`;
+    sourceDesktop.media = '(min-width: 480px)';
+    sourceDesktop.type = 'image/png';
+
+    const sourceMobile = createTag('source');
+    sourceMobile.srcset = `${path}/background-mobile.png?width=300${params} 300w`;
+    sourceMobile.media = '(max-width: 479px)';
+    sourceMobile.type = 'image/png';
+
+    const img = createTag('img',{
+      src: `${path}/background-mobile.png?width=300${params}`,
+      alt: 'Adobe.com background image',
+      fetchpriority: 'high',
+      loading: 'eager'
+    });
+
+    picture.appendChild(sourceDesktop);
+    picture.appendChild(sourceMobile);
+    picture.appendChild(img);
+    georoutingWrapper.appendChild(background);
+    georoutingWrapper.appendChild(foreground);
+    if(geoImage !== 'off'){
+      background.appendChild(picture);
+    }
+    decorateBlockBg(georoutingWrapper,background);
+    
     currentPage.url = window.location.hash ? document.location.href : '#';
+
     if (availableLocales.length === 1) {
       const content = buildContent(currentPage, availableLocales[0], geoData);
-      georoutingWrapper.appendChild(content);
+      foreground.appendChild(content);
       return georoutingWrapper;
     }
     const sortedLocales = availableLocales.sort((a, b) => a.languageOrder - b.languageOrder);
     const tabsContainer = createTabsContainer(sortedLocales.map((l) => l.language));
-    georoutingWrapper.appendChild(tabsContainer);
+    foreground.appendChild(tabsContainer);
 
     sortedLocales.forEach((locale) => {
       const content = buildContent(currentPage, locale, geoData, sortedLocales);
       const tab = createTab(content, locale.language);
-      georoutingWrapper.appendChild(tab);
+      foreground.appendChild(tab);
     });
     return georoutingWrapper;
   }
   return null;
 }
+
 
 async function showModal(details) {
   const { miloLibs, codeRoot } = config;
@@ -287,6 +338,9 @@ export default async function loadGeoRouting(
   getMetadata = getMetadataFunc;
   loadBlock = loadBlockFunc;
   loadStyle = loadStyleFunc;
+  const path = `${config.miloLibs || config.codeRoot}/img/georouting`;
+  const params = 'format=webply&optimize=medium';
+  loadLink(`${path}/background-mobile.png?${params}`, 'image/png', 'preload', 'image', 'background-mobile');
 
   const resp = await fetch(`${config.contentRoot ?? ''}/georoutingv2.json`);
   if (!resp.ok) {

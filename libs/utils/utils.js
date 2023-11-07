@@ -1032,6 +1032,9 @@ async function processSection(section, config, isDoc) {
 export async function loadArea(area = document) {
   const isDoc = area === document;
   let resolveDeferredFn;
+  const config = getConfig();
+
+  if (isDoc) await documentPostSectionLoading(config);
 
   if (isDoc) {
     window.milo = {};
@@ -1040,7 +1043,6 @@ export async function loadArea(area = document) {
     resolveDeferredFn = setupDeferredPromise();
   }
 
-  const config = getConfig();
   await decoratePlaceholders(area, config);
 
   if (isDoc) {
@@ -1063,8 +1065,6 @@ export async function loadArea(area = document) {
   if (currentHash) {
     scrollToHashedElement(currentHash);
   }
-
-  if (isDoc) await documentPostSectionLoading(config);
 
   await loadDeferred(area, areaBlocks, config, resolveDeferredFn);
 }
