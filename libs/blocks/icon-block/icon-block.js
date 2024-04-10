@@ -46,6 +46,18 @@ function upAndInline(el) {
   return /(two|three|four|five)[- ]?up/i.test(el.parentElement.className);
 }
 
+const setImageDimensions = (element, dimensionType, dimensionValue) => {
+  const img = element.tagName === 'PICTURE' ? element.querySelector('img') : element;
+  if (typeof dimensionType === 'number') {
+    img.setAttribute('width', dimensionType.toString());
+    if (typeof dimensionValue === 'number') {
+      img.setAttribute('height', dimensionValue.toString());
+    }
+  } else {
+    img.setAttribute(dimensionType, dimensionValue.toString());
+  }
+};
+
 function decorateContent(el) {
   const block = el.querySelector(':scope > div:not([class])');
   block.classList.add('foreground');
@@ -54,6 +66,7 @@ function decorateContent(el) {
   if (text) {
     text.classList.add('text-content');
     const image = block.querySelector(':scope img');
+    setImageDimensions(image, 42, 42);
     if (image) image.closest('p').classList.add('icon-area');
     // place standalone links inside an action-area
     const lastElem = text.lastElementChild;

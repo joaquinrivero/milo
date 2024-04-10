@@ -32,6 +32,18 @@ function decorateQr(el) {
   qrImage.classList.add('qr-code-img');
 }
 
+const setImageDimensions = (element, dimensionType, dimensionValue) => {
+  const img = element.tagName === 'PICTURE' ? element.querySelector('img') : element;
+  if (typeof dimensionType === 'number') {
+    img.setAttribute('width', dimensionType.toString());
+    if (typeof dimensionValue === 'number') {
+      img.setAttribute('height', dimensionValue.toString());
+    }
+  } else {
+    img.setAttribute(dimensionType, dimensionValue.toString());
+  }
+};
+
 export default function init(el) {
   if (el.className.includes('rounded-corners')) {
     const { miloLibs, codeRoot } = getConfig();
@@ -67,6 +79,7 @@ export default function init(el) {
     const image = row.querySelector(':scope > div:not([class])');
     if (image) image.classList.add('image');
     const img = image?.querySelector(':scope img');
+    setImageDimensions(img, 700, 420);
     if (header && img?.alt === '') img.alt = header.textContent;
     const imageVideo = image?.querySelector('video');
     if (imageVideo) applyHoverPlay(imageVideo);

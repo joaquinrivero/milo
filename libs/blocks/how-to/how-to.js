@@ -48,6 +48,18 @@ const setJsonLd = (heading, description, mainImage, stepsLd) => {
 
 const getImage = (el) => el.querySelector('picture') || el.querySelector('a[href$=".svg"');
 
+const setImageDimensions = (element, dimensionType, dimensionValue) => {
+  const img = element.tagName === 'PICTURE' ? element.querySelector('img') : element;
+  if (typeof dimensionType === 'number') {
+    img.setAttribute('width', dimensionType.toString());
+    if (typeof dimensionValue === 'number') {
+      img.setAttribute('height', dimensionValue.toString());
+    }
+  } else {
+    img.setAttribute(dimensionType, dimensionValue.toString());
+  }
+};
+
 const getHowToInfo = (el) => {
   const infoDiv = el.querySelector(':scope > div > div');
   if (!infoDiv) return {};
@@ -59,7 +71,7 @@ const getHowToInfo = (el) => {
   }
 
   const image = getImage(infoDiv.lastElementChild);
-
+  setImageDimensions(image, 400, 240);
   const desc = infoDiv.childElementCount > 2 || (infoDiv.childElementCount === 2 && !image)
     ? infoDiv.children[1]
     : infoDiv.children[2] || '';

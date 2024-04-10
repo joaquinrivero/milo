@@ -692,7 +692,12 @@ class Gnav {
     // Create image element
     const getImageEl = () => {
       const svgImg = rawBlock.querySelector('picture img[src$=".svg"]');
-      if (svgImg) return svgImg;
+      if (svgImg) {
+        svgImg.setAttribute('width', '25');
+        svgImg.setAttribute('height', '22');
+        svgImg.setAttribute('alt', '');
+        return svgImg;
+      }
 
       const image = blockLinks.find((blockLink) => imgRegex.test(blockLink.href)
         || imgRegex.test(blockLink.textContent));
