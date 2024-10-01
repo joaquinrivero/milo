@@ -13,9 +13,20 @@ async function getKey(product) {
   return keyMatch[0]?.key;
 }
 
+async function getECID() {
+  let ecid = null;
+  if (window.alloy) {
+    await window.alloy('getIdentity').then((data) => {
+      ecid = data?.identity?.ECID;
+    }).catch((err) => window.lana.log(`Error fetching ECID: ${err}`, { tags: 'mobile-app-banner' }));
+  }
+  return ecid;
+}
+
 /* eslint-disable */
-function branchInit(header, key) {
+async function branchInit(key) {
   let initValue = false;
+  const ecid = await getECID();
   function initBranch() {
     if (initValue) {
       return;
@@ -48,10 +59,16 @@ function branchInit(header, key) {
       0
     );
     const privacyConsent = window.adobePrivacy?.hasUserProvidedConsent();
+    const isAndroid = navigator.userAgent.includes('Android');
+    
+    const cookieGrp = window.adobePrivacy?.activeCookieGroups();
+    const performanceCookieConsent = cookieGrp.includes('C0002');
+    const advertisingCookieConsent = cookieGrp.includes('C0004');
+
+    if (performanceCookieConsent && advertisingCookieConsent && isAndroid) branch.setBranchViewData({ data: { ecid }});
     branch.init(key, { tracking_disabled: !privacyConsent });
-    branch.addListener('didShowJourney', () => header.style.position = 'relative');
-    branch.addListener('didCloseJourney', () => header.style.position = 'sticky');
   }
+
   ['adobePrivacy:PrivacyConsent', 'adobePrivacy:PrivacyReject', 'adobePrivacy:PrivacyCustom']
     .forEach((event) => {
       window.addEventListener(event, initBranch);
@@ -61,9 +78,9 @@ function branchInit(header, key) {
 /* eslint-enable */
 export default async function init(el) {
   const header = document.querySelector('.global-navigation');
-  if (!header) return;
-  const row = el.querySelector(':scope > div');
-  const product = row.textContent.trim().toLowerCase();
+  if (!header || header.classList.contains('has-promo')) return;
+  const classListArray = Array.from(el.classList);
+  const product = classListArray.find((token) => token.startsWith('product-')).split('-')[1];
   const key = await getKey(product);
-  if (key) branchInit(header, key);
+  if (key) branchInit(key);
 }

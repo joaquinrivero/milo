@@ -15,9 +15,10 @@ span.placeholder-resolved[data-template="strikethrough"], span.price.price-strik
   visibility: inherit;
 }
 
-a[is='checkout-link'] > span {
+a[is='checkout-link'].con-button > span {
   display: inline-block;
   text-align: center;
+  width: 100%;
   min-width: 66px;
 }
 
@@ -59,7 +60,6 @@ a[is='checkout-link'] > span {
 }
 
 #checkout-link-modal iframe {
-  height: 100%;
   flex: 1;
 }
 

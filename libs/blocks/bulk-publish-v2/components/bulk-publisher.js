@@ -1,7 +1,7 @@
 import './job-process.js';
 import { LitElement, html } from '../../../deps/lit-all.min.js';
 import { getSheet } from '../../../../tools/utils/utils.js';
-import { authenticate, startJob } from '../services.js';
+import { authenticate, getPublishable, startJob } from '../services.js';
 import { getConfig } from '../../../utils/utils.js';
 import {
   delay,
@@ -95,7 +95,8 @@ class BulkPublish2 extends LitElement {
     this.validateUrls();
   }
 
-  setJobErrors(errors) {
+  setJobErrors(jobErrors, authErrors) {
+    const errors = [...jobErrors, ...authErrors];
     const urls = [];
     errors.forEach((error) => {
       const matched = this.urls.filter((url) => {
@@ -294,6 +295,22 @@ class BulkPublish2 extends LitElement {
     if (this.mode === 'full') this.openJobs = false;
   };
 
+  /* c8 ignore next 14 */
+  async reworkErrors(job) {
+    if (this.mode === 'full') {
+      this.openJobs = false;
+      await delay(300);
+    }
+    const { data, name } = job;
+    const { origin } = this.jobs.find((item) => item.result.job.name === name);
+    const errored = data.resources?.filter((path) => path.status !== 200);
+    if (errored.length) {
+      const textarea = this.renderRoot.querySelector('#Urls');
+      textarea.focus();
+      textarea.value = errored.map((error) => (`${origin}${error.path}`)).join('\r\n');
+    }
+  }
+
   renderResults() {
     const { showList, showClear, loading, count } = this.getJobState();
     const handleToggle = () => {
@@ -307,8 +324,8 @@ class BulkPublish2 extends LitElement {
         class="panel-title"
         @click=${handleToggle}>
         <span class="title">
-          ${count ? html`<strong>${count}</strong>` : ''}
-          Job Results
+          ${this.jobs.length ? html`<strong>${this.jobs.length}</strong>` : ''}
+          Job Result${this.jobs.length > 1 ? 's' : ''}
         </span>
         <div class="jobs-tools${showList}">
           <div 
@@ -326,16 +343,16 @@ class BulkPublish2 extends LitElement {
       </div>
       <div class="job${showList}">
         <div class="job-head">
-          <div class="job-url">JOB</div>
+          <div class="job-url">JOB${this.jobs.length > 1 ? 'S' : ''}</div>
           <div class="job-meta">
             <span>STATUS</span>
-            <span>DATE/TIME</span>
           </div>
         </div>
         <div class="job-list">
           ${this.jobs.map((job) => html`
             <job-process 
               .job=${job}
+              .reworkErrors=${(errors) => this.reworkErrors(errors)}
               @progress="${this.setJobProgress}"
               @stopped="${this.setJobStopped}">
             </job-process>
@@ -365,16 +382,17 @@ class BulkPublish2 extends LitElement {
   async submit() {
     if (!this.isDisabled()) {
       this.processing = 'started';
+      const { authorized, unauthorized } = await getPublishable(this);
       const job = await startJob({
-        urls: this.urls,
+        urls: authorized,
         process: this.process.toLowerCase(),
         useBulk: this.user.permissions[this.process]?.useBulk ?? false,
       });
       const { complete, error } = processJobResult(job);
       this.jobs = [...this.jobs, ...complete];
       this.processing = complete.length ? 'job' : false;
-      if (error.length) {
-        this.setJobErrors(error);
+      if (error.length || unauthorized.length) {
+        this.setJobErrors(error, unauthorized);
       } else {
         if (this.mode === 'full') this.openJobs = true;
         this.reset();
@@ -392,6 +410,7 @@ class BulkPublish2 extends LitElement {
 
   renderPromptLoader() {
     setTimeout(() => {
+      /* c8 ignore next 4 */
       const loader = this.renderRoot.querySelector('.load-indicator');
       const message = this.renderRoot.querySelector('.message');
       loader?.classList.add('hide');
@@ -412,6 +431,7 @@ class BulkPublish2 extends LitElement {
         const canUse = Object.values(this.user.permissions).filter((perms) => perms.canUse);
         if (canUse.length) return html``;
         message = 'Current user is not authorized to use Bulk Publishing Tool';
+      /* c8 ignore next 3 */
       } else {
         message = 'Please sign in to AEM sidekick to continue';
       }

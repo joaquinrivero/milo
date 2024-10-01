@@ -2,14 +2,25 @@ import {
   createTag, getConfig, loadArea, loadScript, loadStyle, localizeLink,
 } from '../../utils/utils.js';
 import { replaceKey } from '../../features/placeholders.js';
+import * as commerceLib from '../../deps/mas/commerce.js';
 
-export const PRICE_LITERALS_URL = 'https://milo.adobe.com/libs/commerce/price-literals.json';
 export const CHECKOUT_LINK_CONFIG_PATH = '/commerce/checkout-link.json'; // relative to libs.
 
 export const PRICE_TEMPLATE_DISCOUNT = 'discount';
 export const PRICE_TEMPLATE_OPTICAL = 'optical';
 export const PRICE_TEMPLATE_REGULAR = 'price';
 export const PRICE_TEMPLATE_STRIKETHROUGH = 'strikethrough';
+export const PRICE_TEMPLATE_ANNUAL = 'annual';
+const PRICE_TEMPLATE_MAPPING = new Map([
+  ['priceDiscount', PRICE_TEMPLATE_DISCOUNT],
+  [PRICE_TEMPLATE_DISCOUNT, PRICE_TEMPLATE_DISCOUNT],
+  ['priceOptical', PRICE_TEMPLATE_OPTICAL],
+  [PRICE_TEMPLATE_OPTICAL, PRICE_TEMPLATE_OPTICAL],
+  ['priceStrikethrough', PRICE_TEMPLATE_STRIKETHROUGH],
+  [PRICE_TEMPLATE_STRIKETHROUGH, PRICE_TEMPLATE_STRIKETHROUGH],
+  ['priceAnnual', PRICE_TEMPLATE_ANNUAL],
+  [PRICE_TEMPLATE_ANNUAL, PRICE_TEMPLATE_ANNUAL],
+]);
 
 export const PLACEHOLDER_KEY_DOWNLOAD = 'download';
 
@@ -34,6 +45,68 @@ export const CC_SINGLE_APPS = [
   ['XD'],
 ];
 
+/* Optional checkout link params that are appended to checkout urls as is */
+export const CHECKOUT_ALLOWED_KEYS = [
+  'af',
+  'ai',
+  'apc',
+  'appctxid',
+  'cli',
+  'co',
+  'csm',
+  'ctx',
+  'ctxRtUrl',
+  'DCWATC',
+  'dp', // Enable digital payments for iframe context
+  'fr', // represents the commerce app redirecting to UC
+  'gsp',
+  'ijt',
+  'lang',
+  'lo',
+  'mal',
+  'ms',
+  'mv',
+  'mv2',
+  'nglwfdata',
+  'ot',
+  'otac',
+  'pa',
+  'pcid', // Unified Paywall configuration ID for analytics
+  'promoid',
+  'q',
+  'rf',
+  'sc',
+  'scl',
+  'sdid',
+  'sid', // x-adobe-clientsession
+  'spint',
+  'svar',
+  'th',
+  'thm',
+  'trackingid',
+  'usid',
+  'workflowid',
+  'context.guid',
+  'so.ca',
+  'so.su',
+  'so.tr',
+  'so.va',
+  // below keys are mapped to shorted versions.
+  'quantity',
+  'authCode',
+  'checkoutPromoCode',
+  'rurl',
+  'curl',
+  'ctxrturl',
+  'country',
+  'language',
+  'clientId',
+  'context',
+  'productArrangementCode',
+  'offerType',
+  'marketSegment',
+];
+
 export const CC_SINGLE_APPS_ALL = CC_SINGLE_APPS.flatMap((item) => item);
 
 export const CC_ALL_APPS = ['CC_ALL_APPS',
@@ -49,6 +122,32 @@ const LOADING_ENTITLEMENTS = 'loading-entitlements';
 let log;
 let upgradeOffer = null;
 
+/**
+ * Given a url, calculates the hostname of MAS platform.
+ * Supports, www prod, stage, local and feature branches.
+ * if params are missing, it will return the latest calculated or default value.
+ * @param {string} hostname optional
+ * @param {string} maslibs optional
+ * @returns base url for mas platform
+ */
+export function getMasBase(hostname, maslibs) {
+  let { baseUrl } = getMasBase;
+  if (!baseUrl) {
+    if (maslibs === 'stage') {
+      baseUrl = 'https://www.stage.adobe.com/mas';
+    } else if (maslibs === 'local') {
+      baseUrl = 'http://localhost:9001';
+    } else if (maslibs) {
+      const extension = /.page$/.test(hostname) ? 'page' : 'live';
+      baseUrl = `https://${maslibs}.hlx.${extension}`;
+    } else {
+      baseUrl = 'https://www.adobe.com/mas';
+    }
+    getMasBase.baseUrl = baseUrl;
+  }
+  return baseUrl;
+}
+
 export async function polyfills() {
   if (polyfills.promise) return polyfills.promise;
   let isSupported = false;
@@ -62,7 +161,7 @@ export async function polyfills() {
     polyfills.promise = Promise.resolve();
   } else {
     const { base } = getConfig();
-    polyfills.promise = loadScript(`${base}/deps/custom-elements.js`);
+    polyfills.promise = await loadScript(`${base}/deps/custom-elements.js`);
   }
   return polyfills.promise;
 }
@@ -82,31 +181,51 @@ export async function fetchEntitlements() {
 
 export async function fetchCheckoutLinkConfigs(base = '') {
   fetchCheckoutLinkConfigs.promise = fetchCheckoutLinkConfigs.promise
-    ?? fetch(`${base}${CHECKOUT_LINK_CONFIG_PATH}`).catch(() => {
-      log?.error('Failed to fetch checkout link configs');
+    ?? fetch(`${base}${CHECKOUT_LINK_CONFIG_PATH}`).catch((e) => {
+      log?.error('Failed to fetch checkout link configs', e);
     }).then((mappings) => {
-      if (!mappings?.ok) return undefined;
+      if (!mappings?.ok) return { data: [] };
       return mappings.json();
     });
   return fetchCheckoutLinkConfigs.promise;
 }
 
-export async function getCheckoutLinkConfig(productFamily) {
+export async function getCheckoutLinkConfig(productFamily, productCode, paCode) {
   let { base } = getConfig();
   if (/\.page$/.test(document.location.origin)) {
     /* c8 ignore next 2 */
     base = base.replace('.live', '.page');
   }
   const checkoutLinkConfigs = await fetchCheckoutLinkConfigs(base);
+  if (!checkoutLinkConfigs.data.length) return undefined;
   const { locale: { region } } = getConfig();
-  const productFamilyConfigs = checkoutLinkConfigs.data?.filter(
-    ({ [NAME_PRODUCT_FAMILY]: mappingProductFamily }) => mappingProductFamily === productFamily,
-  );
-  if (productFamilyConfigs.length === 0) return undefined;
-  const checkoutLinkConfig = productFamilyConfigs.find(
+
+  const {
+    paCodeConfigs,
+    productCodeConfigs,
+    productFamilyConfigs,
+  } = checkoutLinkConfigs.data.reduce((acc, config) => {
+    if (config[NAME_PRODUCT_FAMILY] === paCode) {
+      acc.paCodeConfigs.push(config);
+    } else if (config[NAME_PRODUCT_FAMILY] === productCode) {
+      acc.productCodeConfigs.push(config);
+    } else if (config[NAME_PRODUCT_FAMILY] === productFamily) {
+      acc.productFamilyConfigs.push(config);
+    }
+    return acc;
+  }, { paCodeConfigs: [], productCodeConfigs: [], productFamilyConfigs: [] });
+
+  // helps to fallback to product family config
+  // if no locale specific config is found below.
+  const productCheckoutLinkConfigs = [
+    ...paCodeConfigs, ...productCodeConfigs, ...productFamilyConfigs,
+  ];
+
+  if (!productCheckoutLinkConfigs.length) return undefined;
+  const checkoutLinkConfig = productCheckoutLinkConfigs.find(
     ({ [NAME_LOCALE]: locale }) => locale === '',
   );
-  const checkoutLinkConfigOverride = productFamilyConfigs.find(
+  const checkoutLinkConfigOverride = productCheckoutLinkConfigs.find(
     ({ [NAME_LOCALE]: locale }) => locale === region,
   ) ?? {};
   const overrides = Object.fromEntries(
@@ -121,13 +240,25 @@ export async function getCheckoutLinkConfig(productFamily) {
   return finalConfig;
 }
 
-export async function getDownloadAction(options, imsSignedInPromise, offerFamily) {
+export async function getDownloadAction(
+  options,
+  imsSignedInPromise,
+  [{
+    offerType,
+    productArrangementCode,
+    productArrangement: { productCode, productFamily: offerFamily } = {},
+  }],
+) {
   if (options.entitlement !== true) return undefined;
   const loggedIn = await imsSignedInPromise;
   if (!loggedIn) return undefined;
   const entitlements = await fetchEntitlements();
   if (!entitlements?.length) return undefined;
-  const checkoutLinkConfig = await getCheckoutLinkConfig(offerFamily);
+  const checkoutLinkConfig = await getCheckoutLinkConfig(
+    offerFamily,
+    productCode,
+    productArrangementCode,
+  );
   if (!checkoutLinkConfig?.DOWNLOAD_URL) return undefined;
   const offer = entitlements.find((
     { offer: { product_arrangement: { family: subscriptionFamily } } },
@@ -143,11 +274,16 @@ export async function getDownloadAction(options, imsSignedInPromise, offerFamily
   const text = await replaceKey(checkoutLinkConfig.DOWNLOAD_TEXT
       || PLACEHOLDER_KEY_DOWNLOAD, config);
   const url = localizeLink(checkoutLinkConfig.DOWNLOAD_URL);
-  return { text, url };
+  const type = offerType?.toLowerCase() ?? '';
+  return { text, className: `download ${type}`, url };
 }
 
-export async function getUpgradeAction(options, imsSignedInPromise, productFamily) {
-  if (options.entitlement === false) return undefined;
+export async function getUpgradeAction(
+  options,
+  imsSignedInPromise,
+  [{ productArrangement: { productFamily: offerFamily } = {} }],
+) {
+  if (!options.upgrade) return undefined;
   const loggedIn = await imsSignedInPromise;
   if (!loggedIn) return undefined;
   const entitlements = await fetchEntitlements();
@@ -157,10 +293,10 @@ export async function getUpgradeAction(options, imsSignedInPromise, productFamil
     upgradeOffer = await document.querySelector('.merch-offers.upgrade [data-wcs-osi]');
   }
   await upgradeOffer?.onceSettled();
-  if (upgradeOffer && entitlements?.length && productFamily) {
+  if (upgradeOffer && entitlements?.length && offerFamily) {
     const { default: handleUpgradeOffer } = await import('./upgrade.js');
     const upgradeAction = await handleUpgradeOffer(
-      productFamily,
+      offerFamily,
       upgradeOffer,
       entitlements,
       CC_SINGLE_APPS_ALL,
@@ -186,11 +322,26 @@ async function openFragmentModal(path, getModal) {
   return modal;
 }
 
+export function appendTabName(url) {
+  const metaPreselectPlan = document.querySelector('meta[name="preselect-plan"]');
+  if (!metaPreselectPlan?.content) return url;
+  let urlWithPlan;
+  try {
+    urlWithPlan = new URL(url);
+  } catch (err) {
+    window.lana?.log(`Invalid URL ${url} : ${err}`);
+    return url;
+  }
+  urlWithPlan.searchParams.set('plan', metaPreselectPlan.content);
+  return urlWithPlan.href;
+}
+
 async function openExternalModal(url, getModal) {
   await loadStyle(`${getConfig().base}/blocks/iframe/iframe.css`);
   const root = createTag('div', { class: 'milo-iframe' });
+  const urlWithTabName = appendTabName(url);
   createTag('iframe', {
-    src: url,
+    src: urlWithTabName,
     frameborder: '0',
     marginwidth: '0',
     marginheight: '0',
@@ -205,16 +356,19 @@ async function openExternalModal(url, getModal) {
   });
 }
 
+const isInternalModal = (url) => /\/fragments\//.test(url);
+
 export async function openModal(e, url, offerType) {
   e.preventDefault();
   e.stopImmediatePropagation();
   const { getModal } = await import('../modal/modal.js');
+  await import('../modal/modal.merch.js');
   const offerTypeClass = offerType === OFFER_TYPE_TRIAL ? 'twp' : 'crm';
   let modal;
-  if (/\/fragments\//.test(url)) {
+  if (isInternalModal(url)) {
     const fragmentPath = url.split(/hlx.(page|live)/).pop();
     modal = await openFragmentModal(fragmentPath, getModal);
-  } else if (/^https?:/.test(url)) {
+  } else {
     modal = await openExternalModal(url, getModal);
   }
   if (modal) {
@@ -222,29 +376,40 @@ export async function openModal(e, url, offerType) {
   }
 }
 
-export async function getModalAction(offers, options, productFamily) {
+export async function getModalAction(offers, options) {
+  const [{
+    offerType,
+    productArrangementCode,
+    productArrangement: { productCode, productFamily: offerFamily } = {},
+  }] = offers ?? [{}];
   if (options.modal !== true) return undefined;
-  const checkoutLinkConfig = await getCheckoutLinkConfig(productFamily);
+  const checkoutLinkConfig = await getCheckoutLinkConfig(
+    offerFamily,
+    productCode,
+    productArrangementCode,
+  );
   if (!checkoutLinkConfig) return undefined;
-  const [{ offerType }] = offers;
   const columnName = (offerType === OFFER_TYPE_TRIAL) ? FREE_TRIAL_PATH : BUY_NOW_PATH;
   let url = checkoutLinkConfig[columnName];
   if (!url) return undefined;
-  url = localizeLink(checkoutLinkConfig[columnName]);
+  url = isInternalModal(url)
+    ? localizeLink(checkoutLinkConfig[columnName]) : checkoutLinkConfig[columnName];
   return { url, handler: (e) => openModal(e, url, offerType) };
 }
 
 export async function getCheckoutAction(offers, options, imsSignedInPromise) {
-  const [{ productArrangement: { productFamily } = {} }] = offers;
-  const [downloadAction, upgradeAction, modalAction] = await Promise.all([
-    getDownloadAction(options, imsSignedInPromise, productFamily),
-    getUpgradeAction(options, imsSignedInPromise, productFamily),
-    getModalAction(offers, options, productFamily),
-  ]).catch((e) => {
+  try {
+    await imsSignedInPromise;
+    const [downloadAction, upgradeAction, modalAction] = await Promise.all([
+      getDownloadAction(options, imsSignedInPromise, offers),
+      getUpgradeAction(options, imsSignedInPromise, offers),
+      getModalAction(offers, options),
+    ]);
+    return downloadAction || upgradeAction || modalAction;
+  } catch (e) {
     log?.error('Failed to resolve checkout action', e);
     return [];
-  });
-  return downloadAction || upgradeAction || modalAction;
+  }
 }
 
 /**
@@ -256,10 +421,8 @@ export async function initService(force = false) {
     fetchEntitlements.promise = undefined;
     fetchCheckoutLinkConfigs.promise = undefined;
   }
+  const { env, commerce = {}, locale } = getConfig();
   initService.promise = initService.promise ?? polyfills().then(async () => {
-    const commerceLib = await import('../../deps/commerce.js');
-    const { env, commerce = {}, locale } = getConfig();
-    commerce.priceLiteralsURL = PRICE_LITERALS_URL;
     const service = await commerceLib.init(() => ({
       env,
       commerce,
@@ -286,8 +449,9 @@ export async function getCommerceContext(el, params) {
 }
 
 /**
- * Checkout parameter can be set Merch link, code config (scripts.js) or be a default from tacocat.
- * To get the default, 'undefinded' should be passed, empty string will trigger an error!
+ * Checkout parameter can be set on the merch link,
+ * code config (scripts.js) or be a default from tacocat.
+ * To get the default, 'undefined' should be passed, empty string will trigger an error!
  *
  * clientId - code config -> default (adobe_com)
  * workflow - merch link -> metadata -> default (UCv3)
@@ -305,7 +469,16 @@ export async function getCheckoutContext(el, params) {
   const checkoutWorkflow = params.get('workflow') ?? settings.checkoutWorkflow;
   const checkoutWorkflowStep = params?.get('workflowStep') ?? settings.checkoutWorkflowStep;
   const entitlement = params?.get('entitlement');
+  const upgrade = params?.get('upgrade');
   const modal = params?.get('modal');
+
+  const extraOptions = {};
+  params.forEach((value, key) => {
+    if (CHECKOUT_ALLOWED_KEYS.includes(key)) {
+      extraOptions[key] = value;
+    }
+  });
+
   return {
     ...context,
     checkoutClientId,
@@ -313,7 +486,9 @@ export async function getCheckoutContext(el, params) {
     checkoutWorkflowStep,
     checkoutMarketSegment,
     entitlement,
+    upgrade,
     modal,
+    extraOptions: JSON.stringify(extraOptions),
   };
 }
 
@@ -325,24 +500,8 @@ export async function getPriceContext(el, params) {
   const displayRecurrence = params.get('term');
   const displayTax = params.get('tax');
   const forceTaxExclusive = params.get('exclusive');
-  let template = PRICE_TEMPLATE_REGULAR;
-  // This mapping also supports legacy OST links
-  switch (params.get('type')) {
-    case PRICE_TEMPLATE_DISCOUNT:
-    case 'priceDiscount':
-      template = PRICE_TEMPLATE_DISCOUNT;
-      break;
-    case PRICE_TEMPLATE_OPTICAL:
-    case 'priceOptical':
-      template = PRICE_TEMPLATE_OPTICAL;
-      break;
-    case PRICE_TEMPLATE_STRIKETHROUGH:
-    case 'priceStrikethrough':
-      template = PRICE_TEMPLATE_STRIKETHROUGH;
-      break;
-    default:
-      break;
-  }
+  // The PRICE_TEMPLATE_MAPPING supports legacy OST links
+  const template = PRICE_TEMPLATE_MAPPING.get(params.get('type')) ?? PRICE_TEMPLATE_REGULAR;
   return {
     ...context,
     displayOldPrice,

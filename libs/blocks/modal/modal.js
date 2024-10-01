@@ -1,7 +1,8 @@
+/* eslint-disable no-underscore-dangle */
 /* eslint-disable import/no-cycle */
 import { createTag, getMetadata, localizeLink, loadStyle, getConfig } from '../../utils/utils.js';
 
-const FOCUSABLES = 'a, button, input, textarea, select, details, [tabindex]:not([tabindex="-1"]';
+const FOCUSABLES = 'a:not(.hide-video), button, input, textarea, select, details, [tabindex]:not([tabindex="-1"]';
 const CLOSE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
   <g transform="translate(-10500 3403)">
     <circle cx="10" cy="10" r="10" transform="translate(10500 -3403)" fill="#707070"/>
@@ -10,6 +11,10 @@ const CLOSE_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="2
   </g>
 </svg>`;
 
+let isDelayedModal = false;
+let prevHash = '';
+const dialogLoadingSet = new Set();
+
 export function findDetails(hash, el) {
   const id = hash.replace('#', '');
   const a = el || document.querySelector(`a[data-modal-hash="${hash}"]`);
@@ -17,15 +22,23 @@ export function findDetails(hash, el) {
   return { id, path, isHash: hash === window.location.hash };
 }
 
-export function sendAnalytics(event) {
-  // eslint-disable-next-line no-underscore-dangle
-  window._satellite?.track('event', {
+function fireAnalyticsEvent(event) {
+  const data = {
     xdm: {},
-    data: {
-      web: { webInteraction: { name: event?.type } },
-      _adobe_corpnew: { digitalData: event?.data },
-    },
-  });
+    data: { web: { webInteraction: { name: event?.type } } },
+  };
+  if (event?.data) data.data._adobe_corpnew = { digitalData: event.data };
+  window._satellite?.track('event', data);
+}
+
+export function sendAnalytics(event) {
+  if (window._satellite?.track) {
+    fireAnalyticsEvent(event);
+  } else {
+    window.addEventListener('alloy_sendEvent', () => {
+      fireAnalyticsEvent(event);
+    }, { once: true });
+  }
 }
 
 export function closeModal(modal) {
@@ -53,6 +66,11 @@ export function closeModal(modal) {
 
   const hashId = window.location.hash.replace('#', '');
   if (hashId === modal.id) window.history.pushState('', document.title, `${window.location.pathname}${window.location.search}`);
+  isDelayedModal = false;
+  if (prevHash) {
+    window.location.hash = prevHash;
+    prevHash = '';
+  }
 }
 
 function isElementInView(element) {
@@ -79,7 +97,12 @@ function getCustomModal(custom, dialog) {
 }
 
 async function getPathModal(path, dialog) {
-  const block = createTag('a', { href: path });
+  let href = path;
+  if (path.includes('/federal/')) {
+    const { getFederatedUrl } = await import('../../utils/federated.js');
+    href = getFederatedUrl(path);
+  }
+  const block = createTag('a', { href });
   dialog.append(block);
 
   // eslint-disable-next-line import/no-cycle
@@ -91,11 +114,22 @@ export async function getModal(details, custom) {
   if (!(details?.path || custom)) return null;
   const { id } = details || custom;
 
+  dialogLoadingSet.add(id);
   const dialog = createTag('div', { class: 'dialog-modal', id });
   const loadedEvent = new Event('milo:modal:loaded');
 
   if (custom) getCustomModal(custom, dialog);
   if (details) await getPathModal(details.path, dialog);
+  if (isDelayedModal) {
+    dialog.classList.add('delayed-modal');
+    const mediaBlock = dialog.querySelector('div.media');
+    if (mediaBlock) {
+      mediaBlock.classList.add('in-modal');
+      const { miloLibs, codeRoot } = getConfig();
+      const base = miloLibs || codeRoot;
+      loadStyle(`${base}/styles/rounded-corners.css`);
+    }
+  }
 
   const localeModal = id?.includes('locale-modal') ? 'localeModal' : 'milo';
   const analyticsEventName = window.location.hash ? window.location.hash.replace('#', '') : localeModal;
@@ -148,12 +182,16 @@ export async function getModal(details, custom) {
 
   dialog.append(close);
   document.body.append(dialog);
+  dialogLoadingSet.delete(id);
   firstFocusable.focus({ preventScroll: true, ...focusVisible });
   window.dispatchEvent(loadedEvent);
 
   if (!dialog.classList.contains('curtain-off')) {
     document.body.classList.add('disable-scroll');
-    const curtain = createTag('div', { class: 'modal-curtain is-open' });
+    const curtain = createTag('div', {
+      class: 'modal-curtain is-open',
+      'daa-ll': `${analyticsEventName}:modalClose:curtainClose`,
+    });
     curtain.addEventListener('click', (e) => {
       if (e.target === curtain) closeModal(dialog);
     });
@@ -184,7 +222,7 @@ export function getHashParams(hashStr) {
       params.hash = part;
     } else {
       const [key, val] = part.split('=');
-      if (key === 'delay' && parseInt(val, 10) > 0) {
+      if (key === 'delay') {
         params.delay = parseInt(val, 10) * 1000;
       }
     }
@@ -194,8 +232,8 @@ export function getHashParams(hashStr) {
 
 export function delayedModal(el) {
   const { hash, delay } = getHashParams(el?.dataset.modalHash);
-  if (!delay || !hash) return false;
-  el.classList.add('hide-block');
+  if (delay === undefined || !hash) return false;
+  isDelayedModal = true;
   const modalOpenEvent = new Event(`${hash}:modalOpen`);
   const pagesModalWasShownOn = window.sessionStorage.getItem(`shown:${hash}`);
   el.dataset.modalHash = hash;
@@ -214,6 +252,7 @@ export function delayedModal(el) {
 export default function init(el) {
   const { modalHash } = el.dataset;
   if (delayedModal(el) || window.location.hash !== modalHash || document.querySelector(`div.dialog-modal${modalHash}`)) return null;
+  if (dialogLoadingSet.has(modalHash?.replace('#', ''))) return null; // prevent duplicate modal loading
   const details = findDetails(window.location.hash, el);
   return details ? getModal(details) : null;
 }
@@ -231,5 +270,8 @@ window.addEventListener('hashchange', (e) => {
   } else {
     const details = findDetails(window.location.hash, null);
     if (details) getModal(details);
+    if (e.oldURL?.includes('#')) {
+      prevHash = new URL(e.oldURL).hash;
+    }
   }
 });

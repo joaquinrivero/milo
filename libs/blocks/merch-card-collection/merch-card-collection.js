@@ -1,3 +1,4 @@
+import { overrideUrlOrigin } from '../../utils/helpers.js';
 import {
   createTag, decorateLinks, getConfig, loadBlock, loadStyle, localizeLink,
 } from '../../utils/utils.js';
@@ -27,6 +28,9 @@ const LITERAL_SLOTS = [
 // allows improve TBT by returning control to the main thread.
 // eslint-disable-next-line no-promise-executor-return
 const makePause = async (timeout = 0) => new Promise((resolve) => setTimeout(resolve, timeout));
+const BLOCK_NAME = 'merch-card-collection';
+const PROD_INDEX = 'query-index-cards.json';
+const PREVIEW_INDEX = 'query-index-cards-preview.json';
 
 const fail = (el, err = '') => {
   window.lana?.log(`Failed to initialize merch cards: ${err}`);
@@ -34,7 +38,7 @@ const fail = (el, err = '') => {
   return el;
 };
 
-/** Parse andd prepare cards */
+/** Parse and prepare cards */
 async function getCardsRoot(config, html) {
   const cards = `<div>${html}</div>`;
   const fragment = document.createRange().createContextualFragment(
@@ -53,11 +57,13 @@ async function getCardsRoot(config, html) {
   return cardsRoot;
 }
 
-const fetchOverrideCard = (path, config) => new Promise((resolve, reject) => {
-  fetch(`${localizeLink(path, config)}.plain.html`).then((res) => {
+const fetchOverrideCard = (action, config) => new Promise((resolve, reject) => {
+  fetch(`${localizeLink(overrideUrlOrigin(action?.target))}.plain.html`).then((res) => {
     if (res.ok) {
       res.text().then((cardContent) => {
-        resolve({ path, cardContent: /^<div>(.*)<\/div>$/.exec(cardContent.replaceAll('\n', ''))[1] });
+        const response = { path: action.target, cardContent: /^<div>(.*)<\/div>$/.exec(cardContent.replaceAll('\n', ''))[1] };
+        if (config?.mep?.preview) response.manifestId = action.manifestId;
+        resolve(response);
       });
     } else {
       reject(res.statusText
@@ -70,6 +76,7 @@ const fetchOverrideCard = (path, config) => new Promise((resolve, reject) => {
 });
 
 async function overrideCards(root, overridePromises, config) {
+  let overrideString = '';
   try {
     if (overridePromises?.length > 0) {
       // Wait for all override cards to be fetched
@@ -84,12 +91,16 @@ async function overrideCards(root, overridePromises, config) {
             card.replaceWith(overrideMap[card.name]);
           }
         });
+        if (config.mep.preview) {
+          overrideString = overrideData.map(({ manifestId, path }) => `${manifestId}:${path}`).join(',');
+        }
       }
     }
   } catch (error) {
     /* c8 ignore next */
     window?.lana?.log('Failed to override cards', error);
   }
+  return overrideString;
 }
 
 /**
@@ -122,11 +133,14 @@ export function parsePreferences(elements) {
 /** Retrieve cards from query-index  */
 async function fetchCardsData(config, type, el) {
   let cardsData;
-  const endpointElement = el.querySelector('a[href*="query-index-cards.json"]');
+  const usePreviewIndex = config.env.name === 'stage' && !window.location.host.includes('.live');
+  const endpointElement = el.querySelector(`a[href*="${usePreviewIndex ? PREVIEW_INDEX : PROD_INDEX}"]`)
+                            ?? el.querySelector(`a[href*="${PROD_INDEX}"]`);
   if (!endpointElement) {
     throw new Error('No query-index endpoint provided');
   }
-  endpointElement.remove();
+  el.querySelector(`a[href*="${PROD_INDEX}"]`)?.remove();
+  el.querySelector(`a[href*="${PREVIEW_INDEX}"]`)?.remove();
   let queryIndexCardPath = localizeLink(endpointElement.getAttribute('href'), config);
   if (/\.json$/.test(queryIndexCardPath)) {
     queryIndexCardPath = `${queryIndexCardPath}?sheet=${type}`;
@@ -173,14 +187,17 @@ export default async function init(el) {
   const type = el.classList[1];
   const cardsDataPromise = fetchCardsData(config, type, el);
 
-  const merchCardCollectionDep = import('../../deps/merch-card-collection.js');
+  const merchCardCollectionDep = import('../../deps/mas/merch-card-collection.js');
+  const polyfills = import('../merch/merch.js');
+  await polyfills;
   let deps = [
+    polyfills,
     merchCardCollectionDep,
     import('../merch-card/merch-card.js'),
-    import('../../deps/merch-card.js'),
+    import('../../deps/mas/merch-card.js'),
   ];
 
-  const { base } = getConfig();
+  const { base, mep } = getConfig();
   const merchStyles = new Promise((resolve) => {
     loadStyle(`${base}/blocks/merch/merch.css`, resolve);
   });
@@ -211,10 +228,12 @@ export default async function init(el) {
       ...deps,
       import(`${base}/features/spectrum-web-components/dist/theme.js`),
       import(`${base}/features/spectrum-web-components/dist/button.js`),
+      import(`${base}/features/spectrum-web-components/dist/action-button.js`),
+      import(`${base}/features/spectrum-web-components/dist/action-menu.js`),
       import(`${base}/features/spectrum-web-components/dist/search.js`),
-      import(`${base}/features/spectrum-web-components/dist/overlay.js`),
       import(`${base}/features/spectrum-web-components/dist/menu.js`),
-      import(`${base}/features/spectrum-web-components/dist/popover.js`),
+      import(`${base}/features/spectrum-web-components/dist/overlay.js`),
+      import(`${base}/features/spectrum-web-components/dist/tray.js`),
     ] : [];
 
   const preferences = {};
@@ -291,14 +310,20 @@ export default async function init(el) {
   }
 
   const cardsRoot = await cardsRootPromise;
-  const overrides = el.dataset[OVERRIDE_PATHS];
-  const overridePromises = overrides?.split(',').map(fetchOverrideCard);
-  await overrideCards(cardsRoot, overridePromises, config);
+  const overridePromises = mep?.inBlock?.[BLOCK_NAME]?.commands.map(
+    (action) => fetchOverrideCard(action, config),
+  );
+  const overrides = await overrideCards(cardsRoot, overridePromises, config);
   await initMerchCards(attributes.filtered, preferences, cardsRoot);
   await Promise.all([merchStyles, merchCardStyles, ...deps]);
 
   merchCardCollection.append(...cardsRoot.children);
+
   merchCardCollection.displayResult = true;
+  if (config?.mep?.preview && overrides) {
+    merchCardCollection.dataset.overrides = overrides;
+  }
+
   await merchCardCollection.updateComplete;
   performance.measure(
     'merch-card-collection-render',

@@ -1,3 +1,4 @@
+import userCanPublishPage from '../../tools/utils/publish.js';
 import {
   PROCESS_TYPES,
   getErrorText,
@@ -5,6 +6,7 @@ import {
   delay,
   frisk,
   isDelete,
+  isSuccess,
 } from './utils.js';
 
 const BASE_URL = 'https://admin.hlx.page';
@@ -117,17 +119,28 @@ const prepareJobs = (details, useBulk) => {
   }, {}));
 };
 
-const formatResult = ({ status }, job) => {
+const formatIndexResult = (job, results, createTime) => {
+  const resources = results.map(({ result }) => (result));
   const paths = job.urls.map((url) => (new URL(url).pathname));
   const stopTime = new Date();
   return {
-    job: {
-      stopTime,
-      topic: job.process,
-      state: 'stopped',
-      name: `job-${stopTime.toISOString()}`,
-      data: { paths, resources: paths.map((path) => ({ path, status })) },
-      progress: { failed: [200, 204].includes(status) ? 0 : 1 },
+    ...job,
+    ...resources[0],
+    result: {
+      job: {
+        createTime,
+        startTime: createTime,
+        stopTime,
+        topic: job.process,
+        state: 'stopped',
+        name: `job-${stopTime.toISOString()}`,
+        data: { paths, resources },
+        progress: {
+          failed: resources.filter((item) => !isSuccess(item.status)).length,
+          processed: resources.length,
+          total: resources.length,
+        },
+      },
     },
   };
 };
@@ -146,22 +159,31 @@ const startJob = async (details) => {
       if (!request.ok && useBulk) {
         throw new Error(getErrorText(request.status), request, origin);
       }
-      const result = useBulk ? await request.json() : formatResult(request, details);
+      const result = useBulk
+        ? await request.json()
+        : { ...job, status: request.status };
       return { ...job, result, useBulk };
     } catch (error) {
       return {
         ...job,
+        result: error,
         error: error.status ?? 400,
         message: error.message,
       };
     }
   });
-  // batch to limit concurrency
   const results = [];
-  while (requests.length) {
-    if (requests.length > 5) await delay(5000);
-    const result = await Promise.all(requests.splice(0, 4));
-    results.push(...result);
+  if (useBulk) {
+    // batch to limit concurrency
+    while (requests.length) {
+      if (requests.length > 5) await delay(5000);
+      const result = await Promise.all(requests.splice(0, 4));
+      results.push(...result);
+    }
+  } else {
+    const createTime = new Date();
+    const result = await Promise.all(requests);
+    results.push(formatIndexResult(details, result, createTime));
   }
   return results;
 };
@@ -225,8 +247,32 @@ const updateRetry = async ({ queue, urls, process }) => {
   return newQueue;
 };
 
+// publish authentication service
+const getPublishable = async ({ urls, process, user }) => {
+  let publishable = { authorized: [], unauthorized: [] };
+  if (!isLive(process)) {
+    publishable.authorized = urls;
+  } else {
+    const { permissions, profile } = user;
+    const live = { permissions: ['read'] };
+    if (permissions?.publish?.canUse) {
+      live.permissions.push('write');
+    }
+    publishable = await urls.reduce(async (init, url) => {
+      const result = await init;
+      const detail = { webPath: new URL(url).pathname, live, profile };
+      const { canPublish, message } = await userCanPublishPage(detail);
+      if (canPublish) result.authorized.push(url);
+      else result.unauthorized.push({ href: url, message });
+      return result;
+    }, Promise.resolve(publishable));
+  }
+  return publishable;
+};
+
 export {
   authenticate,
+  getPublishable,
   pollJobStatus,
   startJob,
   updateRetry,
