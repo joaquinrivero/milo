@@ -25,6 +25,7 @@ export class VariantLayout {
     }
 
     updateCardElementMinHeight(el, name) {
+        if (!el) return;
         const elMinHeightPropertyName = `--consonant-merch-card-${this.card.variant}-${name}-height`;
         const height = Math.max(
             0,
@@ -87,8 +88,13 @@ export class VariantLayout {
         return '';
     }
 
+    /* c8 ignore next 3 */
+    get theme() {
+      return document.querySelector('sp-theme');
+    }
+
     get evergreen() {
-        return this.card.classList.contains('intro-pricing');
+      return this.card.classList.contains('intro-pricing');
     }
 
     get promoBottom() {
@@ -97,6 +103,28 @@ export class VariantLayout {
 
     get headingSelector() {
         return '[slot="heading-xs"]';
+    }
+
+    get stripStyle() {
+        if (this.card.backgroundImage) {
+            const img = new Image();
+            img.src = this.card.backgroundImage;
+            img.onload = () => {
+                if (img.width > 8) {
+                  /* c8 ignore next 4 */
+                    this.card.classList.add('wide-strip');
+                } else if (img.width === 8) {
+                    this.card.classList.add('thin-strip');
+                }
+        };
+        return `
+          background: url("${this.card.backgroundImage}");
+          background-size: auto 100%;
+          background-repeat: no-repeat;
+          background-position: ${this.card.theme.dir === 'ltr' ? 'left' : 'right'};
+        `;
+      }
+      return '';
     }
 
     get secureLabelFooter() {
