@@ -14,13 +14,13 @@ import {
   getConfig,
   parseEncodedConfig,
   loadStyle,
+  isValidHtmlUrl,
 } from '../../utils/utils.js';
 import Accordion from '../../ui/controls/Accordion.js';
 import {
   decodeCompressedString,
   defaultState,
   initCaas,
-  isValidHtmlUrl,
   isValidUuid,
   loadCaasFiles,
   loadCaasTags,
@@ -76,6 +76,7 @@ const defaultOptions = {
     product: 'Product Card',
     'text-card': 'Text Card',
     'icon-card': 'Icon Card',
+    'news-card': 'News Card',
     'custom-card': 'Custom Card',
   },
   collectionBtnStyle: {
@@ -121,7 +122,6 @@ const defaultOptions = {
     custom: 'Custom',
   },
   filterEvent: {
-    '': 'All',
     live: 'Live',
     upcoming: 'Upcoming',
     'on-demand': 'On Demand',
@@ -162,7 +162,7 @@ const defaultOptions = {
   },
   paginationType: {
     paginator: 'Paginator',
-    loadMore: 'Load More',
+    loadMore: 'Load more',
   },
   search: {
     'contentArea.title': 'Card Titles',
@@ -214,6 +214,7 @@ const defaultOptions = {
     default: 'Default',
     createdDate: 'Created Date',
     modifiedDate: 'Modified Date',
+    staticDate: 'Static Date',
   },
   cardHoverEffect: {
     default: 'Default',
@@ -345,8 +346,8 @@ const BasicsPanel = ({ tagsData }) => {
   }
 
   const countryLangOptions = html`
-    <${Select} options=${countryTags} prop="country" label="Country" sort />
-    <${Select} options=${languageTags} prop="language" label="Language" sort />`;
+  <${Select} options=${countryTags} prop="country" label="Country" sort />
+  <${Select} options=${languageTags} prop="language" label="Language" sort />`;
 
   const partialLoadOptions = html`
     <${Input} label="Partial Load Count" prop="partialLoadCount" type="number" />`;
@@ -366,15 +367,15 @@ const BasicsPanel = ({ tagsData }) => {
 };
 
 const UiPanel = () => html`
+  <${Input} label="Show Total Count" prop="showTotalResults" type="checkbox" />
   <${Input} label="Show Card Borders" prop="setCardBorders" type="checkbox" />
   <${Input} label="Show Footer Dividers" prop="showFooterDivider" type="checkbox" />
-  <${Input} label="Disable Card Banners" prop="disableBanners" type="checkbox" />
-  <${Input} label="Use Light Text" prop="useLightText" type="checkbox" />
+  <${Input} label="Show Card Badges / BadgeImage" prop="showCardBadges" type="checkbox" />
+  <${Input} label="Show Different CTA for Live Events" prop="dynamicCTAForLiveEvents" type="checkbox" />
+  <${Input} label="Hide Date for On-Demand Content" prop="hideDateInterval" type="checkbox" />
+  <${Input} label="Hide Card Banners" prop="disableBanners" type="checkbox" />
   <${Input} label="Use Overlay Links" prop="useOverlayLinks" type="checkbox" />
-  <${Input} label="Show total card count at top" prop="showTotalResults" type="checkbox" />
-  <${Input} label="Hide date for on-demand content" prop="hideDateInterval" type="checkbox" />
-  <${Input} label="Enable showing card badges (by default hidden)" prop="showCardBadges" type="checkbox" />
-  <${Input} label="Show a different CTA for live events" prop="dynamicCTAForLiveEvents" type="checkbox" />
+  <${Input} label="Use Light Text" prop="useLightText" type="checkbox" />
   <${Select} label="Card Style" prop="cardStyle" options=${defaultOptions.cardStyle} />
   <${Select} options=${defaultOptions.cardTitleAccessibilityLevel} prop="cardTitleAccessibilityLevel" label="Card Accessibility Title Level" />
   <${Select} label="Layout" prop="container" options=${defaultOptions.container} />
@@ -585,7 +586,6 @@ const FilterPanel = ({ tagsData }) => {
     <${Input} label="Show Empty Filters" prop="filtersShowEmpty" type="checkbox" />
     <${Select} label="Filter Location" prop="filterLocation" options=${defaultOptions.filterLocation} />
     <${Select} label="Filter logic within each tag panel" prop="filterLogic" options=${defaultOptions.filterLogic} />
-    <${Select} label="Event Filter" prop="filterEvent" options=${defaultOptions.filterEvent} />
     <${Select} label="Automatic or Custom Panel" prop="filterBuildPanel" options=${defaultOptions.filterBuildPanel} />
   `;
 
@@ -642,6 +642,7 @@ const FilterPanel = ({ tagsData }) => {
       && (state.filterBuildPanel === 'custom'
         ? FilterCustomBuildPanel
         : FilterBuildPanel)}
+    <${DropdownSelect} id="filterEvent" options=${defaultOptions.filterEvent} prop="filterEvent" label="Event Filters" />
   `;
 };
 
@@ -657,6 +658,7 @@ const SearchPanel = () => html`
 const PaginationPanel = () => {
   const { state } = useContext(ConfiguratorContext);
   const paginationOptions = html`
+    <${Input} label="Show Pagination Quantity" prop="paginationQuantityShown" type="checkbox" />
     <${Select}
       label="Load More Button Style"
       prop="loadMoreBtnStyle"
@@ -677,7 +679,6 @@ const PaginationPanel = () => {
 
   return html`
     <${Input} label="Enable Pagination" prop="paginationEnabled" type="checkbox" />
-    <${Input} label="Show Pagination Quantity" prop="paginationQuantityShown" type="checkbox" />
     ${state.paginationEnabled && paginationOptions}
   `;
 };

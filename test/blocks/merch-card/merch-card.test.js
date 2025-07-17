@@ -1,6 +1,7 @@
+import { sendKeys, setViewport } from '@web/test-runner-commands';
 import { expect } from '@esm-bundle/chai';
 import { decorateLinks, loadStyle, setConfig } from '../../../libs/utils/utils.js';
-import { readMockText } from '../merch/mocks/fetch.js';
+import { mockFetch, readMockText } from '../merch/mocks/fetch.js';
 
 const { default: init } = await import('../../../libs/blocks/merch-card/merch-card.js');
 const delay = (duration = 100) => new Promise((resolve) => { setTimeout(resolve, duration); });
@@ -8,6 +9,8 @@ const delay = (duration = 100) => new Promise((resolve) => { setTimeout(resolve,
 const locales = { '': { ietf: 'en-US', tk: 'hah7vzn.css' } };
 const conf = { locales };
 setConfig(conf);
+
+document.head.appendChild(document.createElement('mas-commerce-service'));
 
 loadStyle('/libs/blocks/merch-card/merch-card.css');
 
@@ -43,6 +46,8 @@ const expectToValidateHTMLAssertions = (card, assertions = {}) => {
     });
   }
 };
+
+mockFetch();
 
 describe('Merch Card', () => {
   it('Shows segment card', async () => {
@@ -164,6 +169,22 @@ describe('Catalog Card', () => {
       ],
       buttons: ['Learn More', 'Save now'],
     });
+  });
+
+  it('Action menu visible', async () => {
+    document.body.innerHTML = await readMockText('/test/blocks/merch-card/mocks/catalog-action-menu-only.html');
+    await setViewport({ width: 1025, height: 640 });
+    const merchCard = await init(document.querySelector('.merch-card.ribbon'));
+    const actionMenu = merchCard.shadowRoot.querySelector('.action-menu');
+    merchCard.dispatchEvent(new Event('focusin'));
+    expect(actionMenu.classList.contains('always-visible')).to.be.true;
+    await sendKeys({ press: 'Tab' });
+    await sendKeys({ press: 'Tab' });
+    await sendKeys({ press: 'Tab' });
+    await sendKeys({ press: 'Tab' });
+    await sendKeys({ press: 'Tab' });
+    await sendKeys({ press: 'Tab' });
+    expect(actionMenu.classList.contains('always-visible')).to.be.false;
   });
 
   it('Supports Catalog card without badge', async () => {
@@ -316,46 +337,67 @@ describe('Mini Compare Chart Merch Card', () => {
       merchCard.style.visibility = 'visible';
     }, 500);
   });
-});
 
-describe('TWP Merch Card', () => {
-  it('Supports TWP Merch card with Stock Option', async () => {
-    document.body.innerHTML = await readMockText('/test/blocks/merch-card/mocks/twp.html');
-    const merchCard = await init(document.querySelector('#stock'));
-    await delay();
+  it('Supports Mini Compare Chart with checkmarks footer rows', async () => {
+    // Test for mobile
+    window.matchMedia = (query) => ({
+      matches: query.includes('(max-width: 767px)'),
+      addListener: () => {},
+      removeListener: () => {},
+    });
+    document.body.innerHTML = await readMockText('/test/blocks/merch-card/mocks/mini-compare-chart-featured-list.html');
+    const merchCards = document.querySelectorAll('.merch-card.mini-compare-chart');
+    const merchCardClose = await init(merchCards[0]);
+    expectToValidateHTMLAssertions(merchCardClose, {
+      elements: [
+        { selector: 'div[slot="footer-rows"] picture.footer-row-icon-checkmark' },
+        { selector: 'div[slot="footer-rows"] .footer-row-cell-description' },
+      ],
+    });
+    expect(merchCardClose.querySelector('.checkmark-copy-container').classList.contains('close'));
+    const footerRowsTitle = merchCardClose.querySelector('.footer-rows-title');
+    expect(footerRowsTitle).to.exist;
+    const footerRowCellCheckmark = merchCardClose.querySelectorAll('.footer-row-cell-checkmark');
+    expect(footerRowCellCheckmark).to.exist;
+    for (let i = 0; i < footerRowCellCheckmark.length; i += 1) {
+      expect(footerRowCellCheckmark[i].querySelector('.footer-row-icon-checkmark')).to.exist;
+    }
 
-    const body = merchCard.querySelector('div[slot="body-xs"]');
-    const footer = merchCard.querySelector('div[slot="footer"]');
-    const offerSelect = footer.querySelector('merch-offer-select');
-    const price = footer.querySelector('.merch-card-price [is="inline-price"]');
+    // Test for the second merch card (open state)
+    if (footerRowsTitle) {
+      footerRowsTitle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(merchCardClose.querySelector('.checkmark-copy-container').classList.contains('open')).to.be.false;
+      expect(footerRowsTitle.querySelector('.toggle-icon').innerHTML).to.include('svg');
+    }
 
-    expect(merchCard.classList.contains('add-stock')).to.be.true;
-    expect(merchCard.getAttribute('variant')).to.equal('twp');
-    expect(body.textContent).to.contains('What you get:');
-    expect(price).to.exist;
-    expect(offerSelect).to.exist;
-    expect(offerSelect.getAttribute('stock')).to.exist;
-    expect(offerSelect.querySelectorAll('merch-offer').length).to.equal(3);
-  });
+    // Test for the second merch card (open state)
+    const merchCardOpen = await init(merchCards[1]);
+    expectToValidateHTMLAssertions(merchCardOpen, {
+      elements: [
+        { selector: 'div[slot="footer-rows"] picture.footer-row-icon-checkmark' },
+        { selector: 'div[slot="footer-rows"] .footer-row-cell-description' },
+      ],
+    });
+    expect(merchCardOpen.querySelector('.checkmark-copy-container').classList.contains('open')).to.be.false;
 
-  it('Supports TWP Merch card with Quantity Select & no Stock', async () => {
-    document.body.innerHTML = await readMockText('/test/blocks/merch-card/mocks/twp.html');
-    const merchCard = await init(document.querySelector('#quantity-selector'));
-    await delay();
+    // Simulate click to test icon toggle
+    const footerRowsTitleOpen = merchCardOpen.querySelector('.footer-rows-title');
+    expect(footerRowsTitleOpen).to.exist;
+    if (footerRowsTitleOpen) {
+      footerRowsTitleOpen.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(merchCardOpen.querySelector('.checkmark-copy-container').classList.contains('open')).to.be.true;
+      expect(footerRowsTitleOpen.querySelector('.toggle-icon').innerHTML).to.include('svg');
+    }
 
-    const body = merchCard.querySelector('div[slot="body-xs"]');
-    const footer = merchCard.querySelector('div[slot="footer"]');
-    const quantitySelect = merchCard.querySelector('merch-quantity-select');
-    const price = footer.querySelector('.merch-card-price [is="inline-price"]');
-
-    expect(merchCard.classList.contains('add-stock')).to.be.false;
-    expect(merchCard.getAttribute('variant')).to.equal('twp');
-    expect(body.textContent).to.contains('What you get:');
-    expect(price).to.exist;
-    expect(quantitySelect).to.exist;
-    expect(quantitySelect.getAttribute('min')).to.equal('1');
-    expect(quantitySelect.getAttribute('max')).to.equal('10');
-    expect(quantitySelect.getAttribute('min')).to.equal('1');
+    // Test for desktop
+    window.matchMedia = (query) => ({
+      matches: query.includes('(max-width: 600px)'),
+      addListener: () => {},
+      removeListener: () => {},
+    });
+    const merchCardDesktop = await init(merchCards[2]);
+    expect(merchCardDesktop.querySelector('.checkmark-copy-container')).to.not.be.null;
+    expect(merchCardOpen.querySelector('.checkmark-copy-container').classList.contains('open')).to.be.true;
   });
 });
 

@@ -2,6 +2,7 @@
 import { getNextVisibleItemPosition, getPreviousVisibleItemPosition, selectors } from './utils.js';
 import MainNav from './mainNav.js';
 import { closeAllDropdowns, lanaLog, logErrorFor } from '../utilities.js';
+import MobileGnav from './mobileGnav.js';
 
 const cycleOnOpenSearch = ({ e, isDesktop }) => {
   const withoutBreadcrumbs = [
@@ -73,31 +74,74 @@ const focusPrevProfileItem = ({ e }) => {
 };
 
 class KeyboardNavigation {
-  constructor() {
+  constructor(newNavWithLnav) {
     try {
       this.addEventListeners();
       this.mainNav = new MainNav();
+      this.mobileGnav = MobileGnav.init();
+      if (newNavWithLnav) {
+        this.loadLnavNavigation();
+      }
       this.desktop = window.matchMedia('(min-width: 900px)');
     } catch (e) {
-      lanaLog({ message: 'Keyboard Navigation failed to load', e, tags: 'errorType=error,module=gnav-keyboard' });
+      lanaLog({ message: 'Keyboard Navigation failed to load', e, tags: 'gnav-keyboard', errorType: 'e' });
     }
   }
 
+  loadLnavNavigation = async () => {
+    if (!this.localNav) {
+      this.localNav = (async () => {
+        try {
+          const { default: LnavNavigation } = await import('./localNav.js');
+          return new LnavNavigation();
+        } catch (e) {
+          lanaLog({ message: 'Keyboard Navigation failed to load for LNAV', e, tags: 'gnav-keyboard', errorType: 'i' });
+          return null;
+        }
+      })();
+    }
+    return this.localNav;
+  };
+
   addEventListeners = () => {
-    [...document.querySelectorAll(`${selectors.globalNav}, ${selectors.globalFooter}`)]
+    [...document.querySelectorAll(`${selectors.globalNavTag}, ${selectors.globalFooterTag}`)]
       .forEach((el) => {
         el.addEventListener('keydown', (e) => logErrorFor(() => {
+          if (!e.target.closest(`${selectors.globalNav}, ${selectors.globalFooter}`)) return;
           switch (e.code) {
             case 'Tab': {
-              cycleOnOpenSearch({ e, isDesktop: this.desktop.matches });
-              const { items } = getProfileItems({ e });
-
-              const profileBtn = e.target.closest(`${selectors.signIn}, ${selectors.profileButton}`);
-              if (e.shiftKey && e.target === profileBtn) closeProfile();
-              if (items[items.length - 1] === e.target) {
-                e.preventDefault();
-                e.stopPropagation();
-                closeProfile();
+              const isNewNav = !!document.querySelector('header.new-nav');
+              const isOpen = document
+                .querySelector(selectors.navWrapper)
+                .classList.contains(selectors.navWrapperExpanded.slice(1));
+              if (isNewNav && isOpen) {
+                if (e.target.classList.contains(selectors.mainNavToggle.slice(1))) {
+                  e.preventDefault();
+                  if (e.shiftKey) {
+                    const menuItems = [...document.querySelectorAll(`${selectors.mainMenuItems}, ${selectors.mainMenuLinks}`)];
+                    menuItems.at(-1)?.focus();
+                  } else {
+                    document.querySelector(`${selectors.mainMenuItems}, ${selectors.mainMenuLinks}`)?.focus();
+                  }
+                }
+              } else {
+                cycleOnOpenSearch({ e, isDesktop: this.desktop.matches });
+                const { items } = getProfileItems({ e });
+                const profileBtn = e.target.closest(`${selectors.signIn}, ${selectors.profileButton}`);
+                if (e.shiftKey && e.target === profileBtn) closeProfile();
+                if (items[items.length - 1] === e.target) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  closeProfile();
+                }
+              }
+              break;
+            }
+            case 'Escape': {
+              const toggle = document.querySelector('header.new-nav .feds-toggle');
+              if (toggle && toggle === e.target && toggle.getAttribute('aria-expanded') === 'true') {
+                toggle.click();
+                toggle.focus();
               }
               break;
             }
@@ -125,7 +169,7 @@ class KeyboardNavigation {
             default:
               break;
           }
-        }, `KeyboardNavigation index failed. ${e.code}`, 'errorType=error,module=gnav-keyboard'));
+        }, `KeyboardNavigation index failed. ${e.code}`, 'gnav-keyboard', 'e'));
       });
   };
 }

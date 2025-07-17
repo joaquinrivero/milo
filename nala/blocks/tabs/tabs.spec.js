@@ -33,5 +33,21 @@ module.exports = {
       path: '/drafts/nala/blocks/tabs/tabs-scrolling',
       tags: '@tabs @tabs-scrolling @smoke @regression @milo @bacom',
     },
+    {
+      tcid: '3',
+      name: 'Tabs linked to pages',
+      path: '/drafts/nala/blocks/tabs/linked-tabs/tabs-page-1',
+      tags: '@tabs @tabs-linked @smoke @regression @milo',
+    },
+    {
+      tcid: '4',
+      name: 'Tabs with custom deeplink',
+      path: '/drafts/nala/blocks/tabs/tabs-custom-deeplink',
+      data: {
+        activeTab: 2,
+        deeplinkValue: 'edu',
+      },
+      tags: '@tabs @tabs-deeplink @smoke @regression @milo',
+    },
   ],
 };

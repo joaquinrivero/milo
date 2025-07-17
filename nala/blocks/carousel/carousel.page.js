@@ -6,11 +6,14 @@ export default class Carousel {
     this.carouselLightbox = page.locator('.carousel.lightbox');
     this.carouselContainerShow2 = page.locator('.carousel.show-2.container');
     this.carousel = page.locator('.carousel');
+    this.carouselJumpTo = page.locator('.carousel.jump-to');
 
     // carousel selectors
     this.slides = this.carousel.locator('.carousel-slides');
     this.activeSlide = this.slides.locator('.section.carousel-slide.active');
-    this.slidesCount = this.slides.locator('.section.carousel-slide');
+    this.allSlides = this.slides.locator('.section.carousel-slide');
+    this.noAriaHiddenSlides = this.slides.locator('.section.carousel-slide:not([aria-hidden="true"])');
+    this.ariaHiddenSlides = this.slides.locator('.section.carousel-slide[aria-hidden="true"]');
     this.indicator = this.carousel.locator('.carousel-indicators');
     this.indicatorCount = this.indicator.locator('.carousel-indicator');
     this.activeIndicator = this.indicator.locator('.carousel-indicator.active');
@@ -34,7 +37,7 @@ export default class Carousel {
  * @return {Promise<number>}.
  */
   async getNumberOfSlides() {
-    const numberOfSlides = await this.slidesCount.count();
+    const numberOfSlides = await this.allSlides.count();
     return numberOfSlides;
   }
 
@@ -214,9 +217,54 @@ export default class Carousel {
         await this.carouselDefault.waitFor({ state: 'visible', timeout });
         isDisplayed = await this.carouselDefault.isVisible();
         break;
+      case 'carouselJumpTo':
+        await this.carouselJumpTo.waitFor({ state: 'visible', timeout });
+        isDisplayed = await this.carouselJumpTo.isVisible();
+        break;
       default:
         throw new Error(`Invalid carousel type: ${type}`);
     }
     return isDisplayed;
+  }
+
+  /**
+ * Check if all slides are visible
+ * @return {Promise<boolean>} Returns a Promise that resolves to true or false.
+ */
+  async areAllSlidesVisible() {
+    const allSlides = await this.allSlides;
+    const slidesCount = await this.allSlides.count();
+    for (let i = 0; i < slidesCount; i++) {
+      const isVisible = await allSlides.nth(i).isVisible();
+      if (!isVisible) return false;
+    }
+    return true;
+  }
+
+  /**
+ * Check if all shown and hidden slides have appropriate aria-hidden attribute
+ * @param {number} shown - Number of shown slides
+ * @return {Promise<boolean>} Returns a Promise that resolves to true or false.
+ */
+  async validateAriaHidden(shown = 1) {
+    const noAriaSlidesCount = await this.noAriaHiddenSlides.count();
+    const ariaSlidesCount = await this.ariaHiddenSlides.count();
+    const allSlidesCount = await this.allSlides.count();
+    return noAriaSlidesCount === shown
+      && allSlidesCount - noAriaSlidesCount === ariaSlidesCount;
+  }
+
+  /**
+ * Check if all slides with aria-hidden don't have focusable elements and vice versa
+ * @param {number} shown - Number of shown slides
+ * @return {Promise<boolean>} Returns a Promise that resolves to true or false.
+ */
+  async validateSlideFocusableElements() {
+    const noAria = await this.noAriaHiddenSlides;
+    const nonFocusable = await noAria.locator('[tabindex="-1"]').count();
+    const hasAria = await this.ariaHiddenSlides;
+    const focusable = await hasAria.locator('[tabindex="0"]').count();
+
+    return nonFocusable === 0 && focusable === 0;
   }
 }

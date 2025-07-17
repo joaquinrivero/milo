@@ -1,12 +1,16 @@
 /* eslint-disable no-plusplus */
-import { createTag, MILO_EVENTS } from '../../utils/utils.js';
+import { createTag, getConfig, MILO_EVENTS } from '../../utils/utils.js';
 import { decorateButtons } from '../../utils/decorate.js';
 import { debounce } from '../../utils/action.js';
+import { replaceKeyArray } from '../../features/placeholders.js';
+import { getGnavHeight } from '../global-navigation/utilities/utilities.js';
 
 const DESKTOP_SIZE = 900;
 const MOBILE_SIZE = 768;
 const tableHighlightLoadedEvent = new Event('milo:table:highlight:loaded');
+const tabChangeEvent = 'milo:tab:changed';
 let tableIndex = 0;
+
 const isMobileLandscape = () => (window.matchMedia('(orientation: landscape)').matches && window.innerHeight <= MOBILE_SIZE);
 function defineDeviceByScreenSize() {
   const screenWidth = window.innerWidth;
@@ -19,7 +23,7 @@ function defineDeviceByScreenSize() {
   return 'TABLET';
 }
 
-function isStickyHeader(el) {
+export function isStickyHeader(el) {
   return el.classList.contains('sticky')
     || (el.classList.contains('sticky-desktop-up') && defineDeviceByScreenSize() === 'DESKTOP')
     || (el.classList.contains('sticky-tablet-up') && defineDeviceByScreenSize() !== 'MOBILE' && !isMobileLandscape());
@@ -33,15 +37,20 @@ function handleHeading(table, headingCols) {
 
     const elements = col.children;
     if (!elements.length) {
-      col.innerHTML = `<p class="tracking-header">${col.innerHTML}</p>`;
+      col.innerHTML = `<div class="heading-content"><p class="tracking-header">${col.innerHTML}</p></div>`;
     } else {
-      let textStartIndex = 0;
-      const iconTile = elements[0]?.querySelector('img');
+      let textStartIndex = col.querySelector('.highlight-text') ? 1 : 0;
+      let isTrackingSet = false;
+      const iconTile = elements[textStartIndex]?.querySelector('img');
       if (iconTile) {
         textStartIndex += 1;
         if (!(table.classList.contains('merch'))) iconTile.closest('p').classList.add('header-product-tile');
       }
-      elements[textStartIndex]?.classList.add('tracking-header');
+      if (elements[textStartIndex]) {
+        elements[textStartIndex]?.classList.add('tracking-header');
+        isTrackingSet = true;
+      }
+
       const pricingElem = elements[textStartIndex + 1];
       const bodyElem = elements[textStartIndex + 2];
 
@@ -72,10 +81,15 @@ function handleHeading(table, headingCols) {
 
       headingButton.appendChild(buttonsWrapper);
       col.append(headingContent, headingButton);
+      if (!isTrackingSet) {
+        const textNode = Array.from(col.childNodes)
+          .find((node) => node.nodeType === Node.TEXT_NODE);
+        headingContent?.append(createTag('p', { class: 'tracking-header' }, textNode.textContent));
+        textNode.remove();
+      }
     }
 
     const trackingHeader = col.querySelector('.tracking-header');
-    const nodeToApplyRoleScope = trackingHeader ?? col;
 
     if (trackingHeader) {
       const trackingHeaderID = `t${tableIndex + 1}-c${i + 1}-header`;
@@ -90,11 +104,12 @@ function handleHeading(table, headingCols) {
       const describedBy = `${headerBody?.id ?? ''} ${headerPricing?.id ?? ''}`.trim();
       trackingHeader.setAttribute('aria-describedby', describedBy);
 
-      col.removeAttribute('role');
+      col.setAttribute('role', 'columnheader');
     }
 
-    nodeToApplyRoleScope.setAttribute('role', 'columnheader');
-    nodeToApplyRoleScope.setAttribute('scope', 'col');
+    col.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((heading) => {
+      heading.setAttribute('role', 'paragraph');
+    });
   });
 }
 
@@ -105,14 +120,17 @@ function handleEqualHeight(table, tag) {
   columns.forEach(({ children }) => {
     [...children].forEach((row, i) => {
       row.style.height = 'auto';
-      if (!height[i] || row.offsetHeight > height[i]) {
-        height[i] = row.offsetHeight;
-      }
+      const style = window.getComputedStyle(row);
+      const actualHeight = row.clientHeight
+       - parseFloat(style.paddingTop)
+       - parseFloat(style.paddingBottom);
+
+      if (!height[i] || actualHeight > height[i]) height[i] = actualHeight;
     });
   });
   columns.forEach(({ children }) => {
     [...children].forEach((row, i) => {
-      row.style.height = height[i] > 0 ? `${height[i]}px` : 'auto';
+      if (row.clientHeight > 0) row.style.minHeight = height[i] > 0 ? `${height[i]}px` : 'unset';
     });
   });
 }
@@ -150,6 +168,39 @@ function handleAddOnContent(table) {
     });
   });
   setTimeout(() => handleEqualHeight(table, '.row-heading'), 0);
+  table.addEventListener('mas:resolved', debounce(() => { handleEqualHeight(table, '.row-heading'); }));
+}
+
+function setTooltipPosition(el) {
+  if (!['TABLET', 'MOBILE'].includes(defineDeviceByScreenSize())) return;
+
+  const isRtl = document.documentElement.dir === 'rtl';
+  const classesToCheck = isRtl ? ['top', 'bottom', 'left'] : ['top', 'bottom', 'right'];
+  const selector = classesToCheck.map((cls) => `.milo-tooltip.${cls}`).join(',');
+  const tooltips = el.querySelectorAll(selector);
+
+  tooltips.forEach((tooltip) => {
+    tooltip.classList.remove(...classesToCheck);
+    tooltip.classList.add(isRtl ? 'right' : 'left');
+  });
+}
+
+async function setAriaLabelForIcons(el) {
+  const config = getConfig();
+  const expendableIcons = el.querySelectorAll('.icon.expand[role="button"]');
+  const selectFilters = el.parentElement.querySelectorAll('.filters .filter');
+  const ariaLabelElements = [...selectFilters, ...expendableIcons];
+
+  if (!ariaLabelElements.length) {
+    return;
+  }
+
+  const ariaLabels = await replaceKeyArray(['toggle-row', 'choose-table-column'], config);
+
+  ariaLabelElements.forEach((element) => {
+    const labelIndex = element.classList.contains('filter') ? 1 : 0;
+    element.setAttribute('aria-label', ariaLabels[labelIndex]);
+  });
 }
 
 function handleHighlight(table) {
@@ -162,6 +213,7 @@ function handleHighlight(table) {
 
   if (isHighlightTable) {
     firstRow.classList.add('row-highlight');
+    firstRow.setAttribute('aria-hidden', 'true');
     secondRow.classList.add('row-heading');
     secondRowCols.forEach((col) => col.classList.add('col-heading'));
     headingCols = secondRowCols;
@@ -170,6 +222,8 @@ function handleHighlight(table) {
       col.classList.add('col-highlight');
       if (col.innerText) {
         headingCols[i]?.classList.add('no-rounded');
+        const highlightText = createTag('div', { class: 'highlight-text' }, col.innerText);
+        headingCols[i]?.insertBefore(highlightText, headingCols[i].firstChild);
       } else {
         col.classList.add('hidden');
       }
@@ -201,6 +255,19 @@ function handleExpand(e) {
   }
 }
 
+function setExpandEvents(el) {
+  el.querySelectorAll('.icon.expand').forEach((icon) => {
+    icon.parentElement.classList.add('point-cursor');
+    icon.parentElement.addEventListener('click', () => handleExpand(icon));
+    icon.parentElement.setAttribute('tabindex', 0);
+    icon.parentElement.addEventListener('keydown', (e) => {
+      if (e.key === ' ') e.preventDefault();
+
+      if (e.key === 'Enter' || e.key === ' ') handleExpand(icon);
+    });
+  });
+}
+
 function handleTitleText(cell) {
   if (cell.querySelector('.table-title-text')) return;
   const textSpan = createTag('span', { class: 'table-title-text' });
@@ -216,6 +283,13 @@ function handleTitleText(cell) {
     const titleRowSpan = createTag('span', { class: 'table-title-row' });
     titleRowSpan.append(firstIcon, textSpan);
     nodeToInsert = titleRowSpan;
+  }
+
+  const blockquote = nodeToInsert.querySelector('blockquote');
+  if (blockquote) {
+    const quoteReplacement = createTag('div', { class: 'blockquote' });
+    while (blockquote.firstChild) quoteReplacement.appendChild(blockquote.firstChild);
+    blockquote.replaceWith(quoteReplacement);
   }
 
   cell.insertBefore(nodeToInsert, cell.firstChild);
@@ -254,8 +328,10 @@ function handleSection(sectionParams) {
     }
 
     if (isCollapseTable) {
-      const iconTag = createTag('span', { class: 'icon expand' });
-      sectionHeadTitle.appendChild(iconTag);
+      const iconTag = createTag('span', { class: 'icon expand', role: 'button' });
+      if (!sectionHeadTitle.querySelector('.icon.expand')) {
+        sectionHeadTitle.prepend(iconTag);
+      }
 
       if (expandSection) {
         iconTag.setAttribute('aria-expanded', 'true');
@@ -280,6 +356,12 @@ function handleSection(sectionParams) {
     }
   } else if (!row.classList.contains('row-1') && (!isHighlightTable || !row.classList.contains('row-2'))) {
     row.classList.add('section-row');
+    rowCols.forEach((col) => {
+      if (col.querySelector('a') && !col.querySelector('span')) {
+        const textSpan = createTag('span', { class: 'col-text' }, [...col.childNodes]);
+        col.appendChild(textSpan);
+      }
+    });
     if (isMerch && !row.classList.contains('divider')) {
       rowCols.forEach((merchCol) => {
         merchCol.classList.add('col-merch');
@@ -307,6 +389,14 @@ function handleSection(sectionParams) {
       sectionRowTitle.setAttribute('scope', 'row');
     }
   }
+
+  rowCols.forEach((col) => {
+    if (col.querySelector(':scope > :is(strong, em, del, code, sub, sup)')
+      && col.childNodes.length > 1 && !col.querySelector('picture')) {
+      col.replaceChildren(createTag('p', {}, [...col.childNodes]));
+    }
+  });
+
   return expandSection;
 }
 
@@ -373,9 +463,8 @@ function handleHovering(table) {
   }
 }
 
-function handleScrollEffect(table) {
-  const gnav = document.querySelector('header');
-  const gnavHeight = gnav ? gnav.offsetHeight : 0;
+async function handleScrollEffect(table) {
+  const gnavHeight = getGnavHeight();
   const highlightRow = table.querySelector('.row-highlight');
   const headingRow = table.querySelector('.row-heading');
 
@@ -387,7 +476,6 @@ function handleScrollEffect(table) {
   }
   const topOffset = gnavHeight + (highlightRow ? highlightRow.offsetHeight : 0);
   headingRow.style.top = `${topOffset}px`;
-
   const intercept = table.querySelector('.intercept') || createTag('div', { class: 'intercept' });
   intercept.setAttribute('data-observer-intercept', '');
   headingRow.insertAdjacentElement('beforebegin', intercept);
@@ -419,67 +507,83 @@ function applyStylesBasedOnScreenSize(table, originTable) {
     }
   };
 
-  const reAssignEvents = (tableEl) => {
-    tableEl.dispatchEvent(tableHighlightLoadedEvent);
-    tableEl.querySelectorAll('.icon.expand').forEach((icon) => {
-      icon.parentElement.classList.add('point-cursor');
-      icon.parentElement.addEventListener('click', () => handleExpand(icon));
-      icon.parentElement.setAttribute('tabindex', 0);
-      icon.parentElement.addEventListener('keydown', (e) => {
-        e.preventDefault();
-        if (e.key === 'Enter' || e.key === ' ') handleExpand(icon);
-      });
-    });
-    handleHovering(tableEl);
-  };
-
   const mobileRenderer = () => {
     table.dispatchEvent(tableHighlightLoadedEvent);
     const headings = table.querySelectorAll('.row-heading .col');
-    const headingsLength = headings.length;
+    const headingsLength = Array.from(headings)
+      .filter((heading) => heading.textContent.trim()).length;
+    table.querySelectorAll('.hide-mobile').forEach((col) => { col.classList.remove('hide-mobile'); });
 
-    if (isMerch && headingsLength > 2) {
-      table.querySelectorAll('.col:not(.col-1, .col-2)').forEach((col) => col.remove());
-    } else if (headingsLength > 3) {
-      table.querySelectorAll('.col:not(.col-1, .col-2, .col-3), .col.no-borders').forEach((col) => col.remove());
+    if (isMerch && headingsLength >= 2) {
+      table.querySelectorAll('.col:not(.col-1, .col-2)').forEach((col) => { col.classList.add('hide-mobile'); });
+    } else if (headingsLength >= 3) {
+      table.querySelectorAll('.col:not(.col-1, .col-2, .col-3), .col.no-borders').forEach((col) => { col.classList.add('hide-mobile'); });
     }
 
     if ((!isMerch && !table.querySelector('.col-3'))
       || (isMerch && !table.querySelector('.col-2'))) return;
 
-    const filterChangeEvent = () => {
-      table.innerHTML = originTable.innerHTML;
-      reAssignEvents(table);
+    const filterChangeEvent = (e) => {
       const filters = Array.from(table.parentElement.querySelectorAll('.filter')).map((f) => parseInt(f.value, 10));
       const rows = table.querySelectorAll('.row');
 
+      table.querySelectorAll('.hide-mobile, .force-last').forEach((col) => { col.classList.remove('hide-mobile', 'force-last'); });
+
+      rows.forEach((row) => {
+        const clonedCols = row.querySelectorAll('.col[data-cloned]');
+        clonedCols.forEach((col) => col.remove());
+      });
+
       if (isMerch) {
-        table.querySelectorAll(`.col:not(.col-${filters[0] + 1}, .col-${filters[1] + 1})`).forEach((col) => col.remove());
+        table.querySelectorAll(`.col:not(.col-${filters[0] + 1}, .col-${filters[1] + 1})`).forEach((col) => { col.classList.add('hide-mobile'); });
       } else {
-        table.querySelectorAll(`.col:not(.col-1, .col-${filters[0] + 1}, .col-${filters[1] + 1}), .col.no-borders`).forEach((col) => col.remove());
+        table.querySelectorAll(`.col:not(.col-1, .col-${filters[0] + 1}, .col-${filters[1] + 1}), .col.no-borders`).forEach((col) => { col.classList.add('hide-mobile'); });
       }
 
-      if (filters[0] > filters[1]) {
-        if (isMerch) {
-          rows.forEach((row) => row.querySelector('.col:not(.section-row-title)')
-            .classList.add('force-last'));
-        } else {
-          rows.forEach((row) => row.querySelector('.col:not(.section-row-title, .col-1)')
-            .classList.add('force-last'));
+      rows.forEach((row) => {
+        const firstFilterCol = row.querySelector(`.col-${filters[0] + 1}`);
+        const secondFilterCol = row.querySelector(`.col-${filters[1] + 1}`);
+
+        if (firstFilterCol?.classList.contains('col-heading')) {
+          firstFilterCol.classList.remove('right-round');
+          firstFilterCol.classList.add('left-round');
         }
-      } else if (filters[0] === filters[1]) {
+        if (secondFilterCol?.classList.contains('col-heading')) {
+          secondFilterCol.classList.remove('left-round');
+          secondFilterCol.classList.add('right-round');
+        }
+        if (secondFilterCol) secondFilterCol.classList.add('force-last');
+      });
+
+      if (filters[0] === filters[1]) {
+        const selectedCol = filters[0] + 1;
         rows.forEach((row) => {
-          row.append(row.querySelector('.col:last-child').cloneNode(true));
+          const selectedColumn = row.querySelector(`.col-${selectedCol}`);
+          if (!selectedColumn) return;
+
+          const clone = selectedColumn.cloneNode(true);
+          clone.setAttribute('data-cloned', 'true');
+          selectedColumn.classList.remove('force-last');
+
+          if (selectedColumn.classList.contains('col-heading')) {
+            selectedColumn.classList.remove('right-round');
+            selectedColumn.classList.add('left-round');
+            clone.classList.remove('left-round');
+            clone.classList.add('right-round');
+          }
+
+          row.appendChild(clone);
         });
       }
 
       setRowStyle();
 
       if (table.matches('.sticky')) handleScrollEffect(table);
+      if (e) handleEqualHeight(table, '.row-heading');
     };
 
     // Remove filter if table there are only 2 columns
-    const filter = isMerch ? headingsLength > 2 : headingsLength > 3;
+    const filter = isMerch ? headingsLength > 2 : headingsLength > 2;
     if (!table.parentElement.querySelector('.filters') && filter) {
       const filters = createTag('div', { class: 'filters' });
       const filter1 = createTag('div', { class: 'filter-wrapper' });
@@ -497,8 +601,10 @@ function applyStylesBasedOnScreenSize(table, originTable) {
       colSelect0.dataset.filterIndex = 0;
       colSelect1.dataset.filterIndex = 1;
       const visibleCols = table.querySelectorAll(`.col-heading:not([style*="display: none"], .hidden${isMerch ? '' : ', .col-1'})`);
-      colSelect0.querySelectorAll('option').item(visibleCols.item(0).dataset.colIndex - (isMerch ? 1 : 2)).selected = true;
-      colSelect1.querySelectorAll('option').item(visibleCols.item(1).dataset.colIndex - (isMerch ? 1 : 2)).selected = true;
+      const option0 = colSelect0.querySelectorAll('option').item(visibleCols.item(0).dataset.colIndex - (isMerch ? 1 : 2));
+      const option1 = colSelect1.querySelectorAll('option').item(visibleCols.item(1).dataset.colIndex - (isMerch ? 1 : 2));
+      if (option0) option0.selected = true;
+      if (option1) option1.selected = true;
       filter1.append(colSelect0);
       filter2.append(colSelect1);
       filters.append(filter1, filter2);
@@ -506,9 +612,14 @@ function applyStylesBasedOnScreenSize(table, originTable) {
       filter2.addEventListener('change', filterChangeEvent);
       table.parentElement.insertBefore(filters, table);
       table.parentElement.classList.add(`table-${table.classList.contains('merch') ? 'merch-' : ''}section`);
+      if (!isMerch && headingsLength < 3) { filters.style.display = 'none'; }
       filterChangeEvent();
     }
   };
+
+  const removeClones = () => table
+    .querySelectorAll('.row .col[data-cloned]')
+    .forEach((clonedCol) => clonedCol.remove());
 
   // For Mobile (else: tablet / desktop)
   if (!isMerch && !table.querySelector('.row-heading .col-2')) {
@@ -516,17 +627,26 @@ function applyStylesBasedOnScreenSize(table, originTable) {
     table.querySelector('.row-heading .col-1').style.display = 'flex';
   }
 
+  removeClones();
   if (deviceBySize === 'MOBILE' || (isMerch && deviceBySize === 'TABLET')) {
     mobileRenderer();
   } else {
-    table.innerHTML = originTable.innerHTML;
-    reAssignEvents(table);
+    table.querySelectorAll('.hide-mobile, .left-round, .right-round').forEach((col) => { col.classList.remove('hide-mobile', 'left-round', 'right-round'); });
+    [...(table.querySelector('.row-heading')?.children || [])]
+      .forEach((column) => [...column.children].forEach((row) => row.style.removeProperty('height')));
     table.parentElement.querySelectorAll('.filters select').forEach((select, index) => {
       select.querySelectorAll('option').item(index).selected = true;
     });
   }
 
+  table.dispatchEvent(tableHighlightLoadedEvent);
+  handleHovering(table);
   setRowStyle();
+}
+
+function handleStickyHeader(el) {
+  if (!el.classList.value.includes('sticky')) return;
+  setTimeout(() => el.classList.toggle('cancel-sticky', !(el.querySelector('.row-heading').offsetHeight / window.innerHeight < 0.45)));
 }
 
 export default function init(el) {
@@ -558,13 +678,14 @@ export default function init(el) {
     cols.forEach((col, cdx) => {
       col.dataset.colIndex = cdx + 1;
       col.classList.add('col', `col-${cdx + 1}`);
-      col.setAttribute('role', 'cell');
+      col.setAttribute('role', col.matches('.section-head-title') ? 'columnheader' : 'cell');
     });
 
     expandSection = handleSection(sectionParams);
   });
 
   handleHighlight(el);
+  handleStickyHeader(el);
   if (isMerch) formatMerchTable(el);
 
   let isDecorated = false;
@@ -585,20 +706,23 @@ export default function init(el) {
     const handleResize = () => {
       applyStylesBasedOnScreenSize(el, originTable);
       if (isStickyHeader(el)) handleScrollEffect(el);
+      setTooltipPosition(el);
     };
     handleResize();
 
     let deviceBySize = defineDeviceByScreenSize();
     window.addEventListener('resize', () => {
-      if (el.classList.contains('has-addon')) {
-        debounce(handleEqualHeight(el, '.row-heading'), 300);
-      }
+      debounce(handleEqualHeight(el, '.row-heading'));
+      handleStickyHeader(el);
       if (deviceBySize === defineDeviceByScreenSize()) return;
       deviceBySize = defineDeviceByScreenSize();
       handleResize();
     });
 
     isDecorated = true;
+
+    setExpandEvents(el);
+    setAriaLabelForIcons(el);
   };
 
   window.addEventListener(MILO_EVENTS.DEFERRED, () => {
@@ -612,6 +736,10 @@ export default function init(el) {
     }
   });
 
+  const debouncedStickyHeader = debounce(() => handleStickyHeader(el));
+  new ResizeObserver(debouncedStickyHeader).observe(el);
+
+  window.addEventListener(tabChangeEvent, () => handleStickyHeader(el));
   observer.observe(el);
 
   tableIndex++;

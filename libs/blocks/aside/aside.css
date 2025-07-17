@@ -112,6 +112,7 @@
 .aside .foreground.container .image {
   position: relative;
   display: flex;
+  width: 100%;
 }
 
 .aside .foreground.container > div {
@@ -171,7 +172,7 @@
   align-items: center;
 }
 
-.aside:not(.notification) .foreground.container .icon-area {
+.aside:not(.notification, .promobar) .foreground.container .icon-area:not(.con-button) {
   max-height: 80px;
   display: flex;
   align-items: center;
@@ -298,6 +299,7 @@
 }
 
 .aside.rounded-corners .foreground .image img,
+.aside.rounded-corners .foreground .image:not(:has(.video-container)) .pause-play-wrapper,
 .aside.rounded-corners .foreground .image video {
   border-radius: 16px;
 }
@@ -553,7 +555,7 @@
   display: flex;
 }
 
-.aside.split.bio .foreground.container .text .icon-area {
+.aside.split.bio .foreground.container .text .icon-area:not(.con-button) {
   display: none;
 }
 
@@ -566,7 +568,7 @@
 }
 
 .aside.promobar .action-area .con-button {
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .aside.promobar .promo-text.desktop-up,
@@ -594,11 +596,36 @@
   align-items: center;
 }
 
+.aside.promobar.popup .mobile-up.promo-text:has(.milo-tooltip) {
+  position: relative;
+}
+
+.aside.promobar.popup .promo-text span[data-tooltip] .icon-milo {
+  height: 16px;
+}
+
+.aside.promobar.popup .mobile-up.promo-text .milo-tooltip {
+  position: absolute;
+  left: calc(var(--spacing-xs) - 5px);
+  bottom: var(--spacing-xs);
+  margin-inline-start: 0;
+}
+
+[dir="rtl"] .aside.promobar.popup .mobile-up.promo-text .milo-tooltip {
+  left: unset;
+  right: calc(var(--spacing-xs) - 5px);
+}
+
 .aside.promobar.popup {
   border-radius: var(--spacing-xs);
   width: var(--grid-container-width);
   margin: auto;
   box-shadow: 0 3px 6px #707070;
+  overflow: unset;
+}
+
+.aside.promobar.popup .background {
+  border-radius: inherit;
 }
 
 .aside.promobar.popup .foreground.container .promo-text {
@@ -760,6 +787,10 @@
     object-position: center top;
   }
 
+  .aside.split .split-image img.accessibility-control {
+    position: relative;
+  }
+
   .aside .split-image .modal-img-link,
   .aside.split.half .split-image img,
   .aside.split.half .split-image video {
@@ -904,7 +935,7 @@
     margin-top: 0;
   }
 
-  .aside.split.bio .foreground.container .text .icon-area {
+  .aside.split.bio .foreground.container .text .icon-area:not(.con-button) {
     display: block;
   }
 
@@ -948,6 +979,11 @@
     padding: var(--spacing-xxs) 0 0;
     align-items: center;
     text-align: center;
+  }
+
+  .aside.promobar p .con-button wbr,
+  .aside.notification p .con-button wbr {
+    display: none;
   }
 }
 
@@ -996,7 +1032,8 @@
   }
 
   .aside.split.media-top-tablet .split-image img,
-  .aside.split.media-bottom-tablet .split-image img {
+  .aside.split.media-bottom-tablet .split-image img,
+  .aside.split:is(.media-top-tablet, .media-bottom-tablet) .split-image video {
     position: relative;
     width: 100%;
     max-width: 100%;
@@ -1234,4 +1271,11 @@
   .aside.split .foreground.container .text {
     flex: 0 0 calc(500px - 10.5vw);
   }
+}
+
+.aside .foreground.container .action-area a.icon-area.con-button,
+.aside.split.bio .foreground.container .text .action-area a.icon-area.con-button {
+  display: inline-block;
+  height: unset;
+  margin-bottom: unset;
 }

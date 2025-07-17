@@ -187,6 +187,11 @@ describe('global footer', () => {
 
         const regionPickerElem = document.querySelector(allSelectors.regionPicker);
         regionPickerElem.dispatchEvent(new Event('click'));
+        const regionNavModal = document.createElement('div');
+        regionNavModal.classList.add('region-nav'); // pretend that the modal was added to the body
+        // since clicking on the regionpicker elem apparently doesnt set the hash
+        document.body.append(regionNavModal);
+        window.dispatchEvent(new Event('milo:modal:loaded'));
 
         expect(regionPickerElem.getAttribute('href') === '#langnav').to.equal(true);
         expect(regionPickerElem.getAttribute('aria-expanded')).to.equal('true');
@@ -350,7 +355,7 @@ describe('global footer', () => {
       };
 
       const logMessage = 'test message';
-      const logTags = 'errorType=error,module=global-footer';
+      const logTags = 'global-footer';
       await logErrorFor(erroneousFunction, logMessage, logTags);
 
       expect(window.lana.log.calledOnce).to.be.true;
@@ -431,6 +436,51 @@ describe('global footer', () => {
     it('should contain dark theme class if dark theme is configured', async () => {
       await createFullGlobalFooter({ waitForDecoration: true, customConfig: { theme: 'dark' } });
       expect(document.querySelector('footer').classList.contains('feds--dark')).to.be.true;
+    });
+  });
+
+  describe('standalone footer', async () => {
+    it('should still load the regionnav if it\'s a standalone footer', async () => {
+      await createFullGlobalFooter({
+        waitForDecoration: true,
+        customConfig: { standaloneGnav: true },
+      });
+
+      const regionPickerElem = document.querySelector(allSelectors.regionPicker);
+      regionPickerElem.dispatchEvent(new Event('click'));
+      const regionNavModal = document.createElement('div');
+      regionNavModal.classList.add('region-nav'); // pretend that the modal was added to the body
+      regionNavModal.setAttribute('data-failed', 'true');
+      // since clicking on the regionpicker elem apparently doesnt set the hash
+      document.body.append(regionNavModal);
+      window.dispatchEvent(new Event('milo:modal:loaded'));
+
+      expect(regionPickerElem.getAttribute('href') === '#langnav').to.equal(true);
+      expect(regionPickerElem.getAttribute('aria-expanded')).to.equal('true');
+
+      window.dispatchEvent(new Event('milo:modal:closed'));
+      expect(regionPickerElem.getAttribute('aria-expanded')).to.equal('false');
+    });
+  });
+
+  describe('jarvis chat tests', () => {
+    it('should add the jarvis attribute if the footer contains a jarvis chat link and jarvis config section metadata', async () => {
+      window.fetch.restore();
+      stub(window, 'fetch').callsFake(async (url) => {
+        if (url.includes('/footer')) {
+          return mockRes({
+            payload: fetchedFooter(
+              { hasJarvisChat: true },
+            ),
+          });
+        }
+        if (url.includes('/placeholders')) return mockRes({ payload: placeholders });
+        if (url.includes('icons.svg')) return mockRes({ payload: icons });
+        if (url.includes('/regions.plain.html')) return mockRes({ payload: await readFile({ path: '../region-nav/mocks/regions.html' }) });
+        return null;
+      });
+      await createFullGlobalFooter({ waitForDecoration: true });
+      expect(document.querySelector('a[href*="#open-jarvis-chat"]').getAttribute('data-jarvis-config')).to.not.be.null;
     });
   });
 });

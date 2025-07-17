@@ -61,7 +61,7 @@ export default async function init(el) {
     rows = tail;
   }
   let blockType = null;
-  const types = ['merch', 'qr-code'];
+  const types = ['merch', 'qr-code', 'checklist'];
   [...types].forEach((type) => {
     if (!el.classList.contains(type)) return;
     blockType = type;
@@ -79,9 +79,7 @@ export default async function init(el) {
       decorateBlockText(text, blockTypeSizes[size], blockType);
     }
     const image = row.querySelector(':scope > div:not([class])');
-    if (image) image.classList.add('image');
-    const img = image?.querySelector(':scope img');
-    if (header && img?.alt === '') img.alt = header.textContent;
+    image?.classList.add('image');
     const imageVideo = image?.querySelector('video');
     if (imageVideo) applyHoverPlay(imageVideo);
 
@@ -123,4 +121,12 @@ export default async function init(el) {
     const textBlock = container.querySelector('.text');
     if (textBlock) await loadCDT(textBlock, el.classList);
   }
+
+  const checklistLinks = blockType === 'checklist' ? el.querySelectorAll('li > a') : [];
+  checklistLinks.forEach((link) => {
+    const parent = link.parentElement;
+    const span = createTag('span');
+    span.append(...parent.childNodes);
+    parent.appendChild(span);
+  });
 }

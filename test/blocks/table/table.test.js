@@ -1,13 +1,18 @@
 import { readFile, sendMouse, sendKeys, resetMouse } from '@web/test-runner-commands';
 import { expect } from 'chai';
-import { MILO_EVENTS } from '../../../libs/utils/utils.js';
+import { getConfig, MILO_EVENTS, setConfig } from '../../../libs/utils/utils.js';
 import { delay, waitForElement } from '../../helpers/waitfor.js';
+import { replaceKey } from '../../../libs/features/placeholders.js';
 
 document.body.innerHTML = await readFile({ path: './mocks/body.html' });
 const { default: init } = await import('../../../libs/blocks/table/table.js');
+const locales = { '': { ietf: 'en-US', tk: 'hah7vzn.css' } };
+const conf = { locales, contentRoot: '/test/blocks/table/mocks' };
+setConfig(conf);
+const config = getConfig();
 
 describe('table and tablemetadata', () => {
-  beforeEach(() => {
+  before(() => {
     const tables = document.querySelectorAll('.table');
     tables.forEach((t) => init(t));
     window.dispatchEvent(new Event(MILO_EVENTS.DEFERRED));
@@ -57,9 +62,7 @@ describe('table and tablemetadata', () => {
       window.innerWidth = 760;
       window.dispatchEvent(new Event('resize'));
       const filters = await waitForElement('.filters');
-      const col5 = table.querySelector('.col-5');
       expect(filters).to.be.exist;
-      expect(col5).to.be.null;
     });
 
     it('filter test: for case of both filter poiting same options', async () => {
@@ -110,6 +113,26 @@ describe('table and tablemetadata', () => {
       const tooltipHeading = document.querySelector('.tooltip-heading');
       expect(tooltipHeading.childNodes.length).to.equal(2);
       expect(tooltipHeading.querySelector('.milo-tooltip, .icon-tooltip')).to.exist;
+    });
+  });
+
+  describe('mobile aria-label test setup', () => {
+    beforeEach(() => {
+      const tables = document.querySelectorAll('.table');
+      tables.forEach((t) => init(t));
+      window.dispatchEvent(new Event(MILO_EVENTS.DEFERRED));
+    });
+
+    it('should apply aria-label to all selects within .filters on mobile', async () => {
+      window.innerWidth = 375;
+      window.dispatchEvent(new Event('resize'));
+      const filters = await waitForElement('.filters');
+      const selectElements = filters.querySelectorAll('select');
+      const ariaLabel = await replaceKey('choose-table-column', config);
+
+      selectElements.forEach((selectElement) => {
+        expect(selectElement.getAttribute('aria-label')).to.equal(ariaLabel);
+      });
     });
   });
 });

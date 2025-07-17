@@ -1,4 +1,6 @@
-import { getFederatedContentRoot } from '../../utils/federated.js';
+import { getFederatedContentRoot } from '../../utils/utils.js';
+
+const OLD_GEOROUTING = 'oldgeorouting';
 
 let config;
 let createTag;
@@ -32,14 +34,53 @@ const createTab = (content, tabName) => {
   return topDiv;
 };
 
+const [handleOverflow, removeOverflow] = (() => {
+  let geoModal = null;
+  let resizeObserver = null;
+
+  const calcOverflow = () => {
+    if (!geoModal) return;
+    const isOverflowing = geoModal.scrollHeight > geoModal.clientHeight;
+    geoModal.style.overflow = isOverflowing ? 'auto' : 'visible';
+  };
+
+  return [
+    (container) => {
+      if (!container) return;
+      geoModal = container;
+
+      requestAnimationFrame(() => {
+        calcOverflow();
+      });
+
+      resizeObserver = new ResizeObserver(() => {
+        calcOverflow();
+      });
+      resizeObserver.observe(geoModal);
+
+      window.addEventListener('milo:modal:closed', removeOverflow);
+    },
+    () => {
+      if (!geoModal) return;
+      geoModal.removeAttribute('style');
+      if (resizeObserver) resizeObserver.disconnect();
+      geoModal = null;
+      window.removeEventListener('milo:modal:closed', removeOverflow);
+    },
+  ];
+})();
+
 export const getCookie = (name) => document.cookie
   .split('; ')
   .find((row) => row.startsWith(`${name}=`))
   ?.split('=')[1];
 
-const getAkamaiCode = () => new Promise((resolve, reject) => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const akamaiLocale = urlParams.get('akamaiLocale') || sessionStorage.getItem('akamai');
+export const getAkamaiCode = (checkedParams = false) => new Promise((resolve, reject) => {
+  let akamaiLocale = null;
+  if (!checkedParams) {
+    const urlParams = new URLSearchParams(window.location.search);
+    akamaiLocale = urlParams.get('akamaiLocale') || sessionStorage.getItem('akamai');
+  }
   if (akamaiLocale !== null) {
     resolve(akamaiLocale.toLowerCase());
   } else {
@@ -115,6 +156,7 @@ function decorateForOnLinkClick(link, urlPrefix, localePrefix, eventType = 'Swit
       || window.location.host.endsWith('.adobe.com') ? 'domain=adobe.com' : '';
     document.cookie = `international=${modPrefix};path=/;${domain}`;
     link.closest('.dialog-modal').dispatchEvent(new Event('closeModal'));
+    removeOverflow();
   });
 }
 
@@ -271,6 +313,7 @@ export default async function loadGeoRouting(
   getMetadataFunc,
   loadBlockFunc,
   loadStyleFunc,
+  v2jsonPromise = null,
 ) {
   if (getGeoroutingOverride()) return;
   config = conf;
@@ -279,25 +322,25 @@ export default async function loadGeoRouting(
   loadBlock = loadBlockFunc;
   loadStyle = loadStyleFunc;
 
-  const urls = [
-    `${config.contentRoot ?? ''}/georoutingv2.json`,
-    `${config.contentRoot ?? ''}/georouting.json`,
-    `${getFederatedContentRoot()}/federal/georouting/georoutingv2.json`,
-  ];
-  let resp;
-  for (const url of urls) {
-    resp = await fetch(url);
-    if (resp.ok) {
-      if (url.includes('georouting.json')) {
-        const json = await resp.json();
-        // eslint-disable-next-line import/no-cycle
-        const { default: loadGeoRoutingOld } = await import('../georouting/georouting.js');
-        loadGeoRoutingOld(config, createTag, getMetadata, json);
-      }
-      break;
-    }
-  }
-  const json = await resp.json();
+  const v2JSON = (v2jsonPromise ?? import(`${conf.contentRoot ?? ''}/georoutingv2.json`))
+    .then((r) => r.json())
+    .catch(() => null);
+  const loadOldGeorouting = async (json) => {
+    const { default: loadGeoRoutingOld } = await import('../georouting/georouting.js');
+    await loadGeoRoutingOld(config, createTag, getMetadata, json);
+    return OLD_GEOROUTING;
+  };
+  const oldGeorouting = () => fetch(`${config.contentRoot ?? ''}/georouting.json`)
+    .then((r) => r.json())
+    .then(loadOldGeorouting)
+    .catch(() => null);
+  const federatedJSON = () => fetch(`${getFederatedContentRoot()}/federal/georouting/georoutingv2.json`)
+    .then((r) => r.json())
+    .catch(() => null);
+
+  const json = (await v2JSON) ?? (await oldGeorouting()) ?? (await federatedJSON());
+  if (json === OLD_GEOROUTING) return;
+
   const { locale } = config;
 
   const urlLocale = locale.prefix.replace('/', '');
@@ -317,7 +360,7 @@ export default async function loadGeoRouting(
       );
       const details = await getDetails(urlGeoData, localeMatches, json.geos.data);
       if (details) {
-        await showModal(details);
+        handleOverflow(await showModal(details));
         sendAnalyticsFunc(
           new Event(`Load:${storedLocaleGeo || 'us'}-${urlLocaleGeo || 'us'}|Geo_Routing_Modal`),
         );
@@ -333,7 +376,7 @@ export default async function loadGeoRouting(
       const localeMatches = getMatches(json.georouting.data, akamaiCode);
       const details = await getDetails(urlGeoData, localeMatches, json.geos.data);
       if (details) {
-        await showModal(details);
+        handleOverflow(await showModal(details));
         if (akamaiCode === 'gb') akamaiCode = 'uk';
         sendAnalyticsFunc(
           new Event(`Load:${urlLocale || 'us'}-${akamaiCode || 'us'}|Geo_Routing_Modal`),
