@@ -16,6 +16,9 @@
     "list"
     "media";
   --grid-desktop-default:
+    "heading heading"
+    "list list";
+  --grid-desktop-mini-image:
     "heading mini-image"
     "list list";
   --grid-desktop-two-col:
@@ -77,11 +80,6 @@
   display: grid;
  }
 
- .how-to-heading .heading-l {
-  font-size: var(--type-heading-xl-size);
-  line-height: var(--type-heading-xl-lh);
- }
-
  .how-to-heading p {
   margin: 0;
  }
@@ -104,7 +102,12 @@
 
  .how-to-media.mini-image img {
   height: 100%;
-  object-position: center;
+  object-position: right;
+  max-width: 300px;
+ }
+
+ [dir="rtl"] .how-to-media.mini-image img {
+  object-position: left;
  }
 
  .how-to-media.large {
@@ -140,6 +143,10 @@
 
   .how-to ol {
     min-width: 380px;
+  }
+
+  .how-to .foreground.has-image {
+    grid-template-areas: var(--grid-desktop-mini-image);
   }
 
   .how-to.large-image .foreground {
