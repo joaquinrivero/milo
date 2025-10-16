@@ -88,9 +88,35 @@ function localizeIconPath(iconPath) {
   return iconPath;
 }
 
+function generateCheckboxGroups(checkboxGroups) {
+  if (!checkboxGroups?.length) return [];
+  const groups = [];
+  for (const group of checkboxGroups) {
+    const { title, label, deeplink, checkboxes } = group;
+    if (checkboxes?.length) {
+      const checkboxGroup = createTag('merch-sidenav-checkbox-group', {
+        sidenavCheckboxTitle: title,
+        label: label || deeplink,
+        deeplink,
+      });
+      for (const checkbox of checkboxes) {
+        const spCheckbox = createTag('sp-checkbox', {
+          emphasized: true,
+          name: checkbox.name,
+        });
+        spCheckbox.textContent = checkbox.label;
+        checkboxGroup.append(spCheckbox);
+      }
+      groups.push(checkboxGroup);
+    }
+  }
+
+  return groups;
+}
+
 function getSidenav(collection) {
   if (!collection.data) return null;
-  const { hierarchy, placeholders } = collection.data;
+  const { hierarchy, placeholders, checkboxGroups } = collection.data;
   if (!hierarchy?.length) return null;
 
   const titleKey = `${collection.variant}SidenavTitle`;
@@ -149,6 +175,11 @@ function getSidenav(collection) {
 
   sidenav.append(sidenavList);
 
+  /* Checkbox Groups */
+  const checkboxGroupElements = generateCheckboxGroups(checkboxGroups);
+  for (const group of checkboxGroupElements) {
+    sidenav.append(group);
+  }
   return sidenav;
 }
 
